@@ -48,9 +48,9 @@ object LevelRepository {
     val specs =
       listOf(
         // Top-right UP_LEFT pair + far-right YELLOW UP_LEFT
-        VehicleSpec(x = 4.5f, y = 1.0f, color = VehicleColor.BLUE, direction = Direction.UP, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 5.5f, y = 1.0f, color = VehicleColor.RED, direction = Direction.UP, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 7.5f, y = 3.0f, color = VehicleColor.YELLOW, direction = Direction.UP, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 5.0f, y = 1.0f, color = VehicleColor.BLUE, direction = Direction.UP, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 6.0f, y = 1.0f, color = VehicleColor.RED, direction = Direction.UP, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 7.5f, y = 4.0f, color = VehicleColor.YELLOW, direction = Direction.UP, capacity = BUS_CAPACITY),
         // Bottom-left DOWN_RIGHT buses
         VehicleSpec(x = 0.5f, y = 3.0f, color = VehicleColor.YELLOW, direction = Direction.DOWN, capacity = BUS_CAPACITY),
         VehicleSpec(x = 1.5f, y = 5.0f, color = VehicleColor.BLUE, direction = Direction.DOWN, capacity = BUS_CAPACITY),
@@ -63,9 +63,9 @@ object LevelRepository {
         VehicleSpec(x = 4.0f, y = 2.5f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
         VehicleSpec(x = 4.0f, y = 3.5f, color = VehicleColor.YELLOW, direction = Direction.LEFT, capacity = BUS_CAPACITY),
         VehicleSpec(x = 4.0f, y = 4.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = BUS_CAPACITY),
-        // Lower-right UP_RIGHT pair
-        VehicleSpec(x = 6.0f, y = 3.0f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 6.0f, y = 4.0f, color = VehicleColor.BLUE, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
+        // Right stack (RED DOWN_LEFT under hand + BLUE UP_RIGHT)
+        VehicleSpec(x = 6.0f, y = 3.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 6.0f, y = 4.5f, color = VehicleColor.BLUE, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
       )
 
     return assembleFromSpecs(

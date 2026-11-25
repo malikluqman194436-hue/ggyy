@@ -4,9 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,34 +29,43 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import com.example.R
 import com.example.game.GameOutcome
 import com.example.game.GameUiState
 import com.example.game.GameViewModel
 import com.example.ui.components.BoosterPurchaseDialog
 import com.example.ui.components.CoinPill
-import com.example.ui.components.ConveyorTrackView
 import com.example.ui.components.HelpDialog
 import com.example.ui.components.LoseLevelDialog
 import com.example.ui.components.ParkingLotCanvas
@@ -86,88 +96,116 @@ fun GameScreen(
     }
   }
 
-  // Smooth 60fps simulation ticker
-  LaunchedEffect(uiState.outcome, uiState.levelNumber) {
+  var isScreenHeld by remember { mutableStateOf(false) }
+  val canBoostSpeed =
+    uiState.outcome == GameOutcome.PLAYING &&
+      !uiState.showHelpDialog &&
+      !uiState.showMainShopDialog &&
+      uiState.activeBoosterShop == null &&
+      uiState.activeSlotUnlockIndex == null
+  val isSpeedBoosted = isScreenHeld && canBoostSpeed
+
+  LaunchedEffect(isSpeedBoosted) {
+    viewModel.setSpeedBoosted(isSpeedBoosted)
+  }
+
+  LaunchedEffect(uiState.outcome) {
     if (uiState.outcome != GameOutcome.PLAYING) return@LaunchedEffect
-    var lastNanos = 0L
+    var lastFrameNanos = withFrameNanos { it }
     while (true) {
-      withFrameNanos { frameNanos ->
-        if (lastNanos != 0L) {
-          val dt = (frameNanos - lastNanos) / 1_000_000_000f
-          viewModel.onFrame(dt)
-        }
-        lastNanos = frameNanos
-      }
+      val nowNanos = withFrameNanos { it }
+      val dt = ((nowNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+      lastFrameNanos = nowNanos
+      viewModel.onFrame(dt)
     }
   }
 
-  val focusRequester = remember { FocusRequester() }
-  LaunchedEffect(Unit) {
-    focusRequester.requestFocus()
+  DisposableEffect(Unit) {
+    onDispose {
+      viewModel.setSpeedBoosted(false)
+    }
   }
 
   BoxWithConstraints(
     modifier =
       modifier
         .fillMaxSize()
-        .focusRequester(focusRequester)
-        .focusable()
-        .onPreviewKeyEvent { event ->
-          if (event.type == KeyEventType.KeyDown && event.key == Key.D) {
-            viewModel.toggleLaneDebug()
-            true
-          } else {
-            false
+        .background(Color(0xFF00B8FF))
+        .pointerInput(Unit) {
+          awaitPointerEventScope {
+            while (true) {
+              val event = awaitPointerEvent(PointerEventPass.Initial)
+              isScreenHeld = event.changes.any { it.pressed }
+            }
           }
         }
   ) {
     val screenH = maxHeight
 
-    // 1. Exact full-bleed gameplay background (glossy racetrack + waiting bays + yellow curbs + corner park bushes)
+    // 1. Clean full-bleed gameplay background (sky + clouds, green park strip, waiting bays, curbs & corner bushes)
     Image(
-      painter = painterResource(id = R.drawable.game_play_bg),
+      painter = painterResource(id = R.drawable.game_play_bg_clean),
       contentDescription = null,
       contentScale = ContentScale.FillBounds,
       modifier = Modifier.fillMaxSize(),
     )
 
-    // 2. ZONE 1: Passengers circulating along the background's oval road loop & left/right arms
-    ConveyorTrackView(
-      passengers = uiState.passengers,
-      conveyorOffsetPx = uiState.conveyorOffsetPx,
-      remainingCount = uiState.passengers.size,
-      showLaneDebug = uiState.showLaneDebug,
-      onViewportSized = { w, h -> viewModel.updateLaneViewport(w, h) },
-      modifier = Modifier.fillMaxSize(),
-    )
+    // 2. Glossy navy oval road loop & entry arms with smooth animated conveyor dashes
+    Box(
+      modifier =
+        Modifier
+          .align(Alignment.TopCenter)
+          .fillMaxWidth()
+          .height(screenH * 0.319f)
+          .clipToBounds(),
+    ) {
+      Image(
+        painter = painterResource(id = R.drawable.game_oval_road_loop_v3),
+        contentDescription = null,
+        contentScale = ContentScale.FillBounds,
+        modifier = Modifier.fillMaxSize(),
+      )
+      AnimatedRoadBeltDashes(
+        isPlaying = uiState.outcome == GameOutcome.PLAYING,
+        isSpeedBoosted = isSpeedBoosted,
+        modifier = Modifier.fillMaxSize(),
+      )
+    }
 
-    // 3. WAITING BAYS: 8 tilted bays aligned 1-to-1 with the background stand slots
+    // 3. Waiting bays + Middle Parking Lot (3D isometric buses + tutorial hand) + driving/particles overlay
     WaitingSlotsRow(
       slots = uiState.slots,
       vehicles = uiState.vehicles,
       jumpingPassengers = uiState.jumpingPassengers,
-      onSlotTap = { viewModel.onSlotTapped(it) },
+      onSlotTap = { slotIdx -> viewModel.onSlotTapped(slotIdx) },
       modifier = Modifier.fillMaxSize(),
     )
 
-    // 4. ZONE 2: Middle Parking Lot + Tunnels + Vehicles positioned cleanly inside the grey asphalt area
-    Box(
+    ParkingLotCanvas(
+      gridCols = uiState.gridCols,
+      gridRows = uiState.gridRows,
+      vehicles = uiState.vehicles,
+      tunnels = uiState.tunnels,
+      tutorialVehicleId = uiState.tutorialVehicleId,
+      onLotTap = { gx, gy -> viewModel.onLotTap(gx, gy) },
       modifier =
         Modifier
-          .offset(y = screenH * 0.452f)
+          .align(Alignment.TopCenter)
+          .padding(top = screenH * 0.452f)
           .fillMaxWidth()
-          .height(screenH * 0.455f)
-    ) {
-      ParkingLotCanvas(
-        gridCols = uiState.gridCols,
-        gridRows = uiState.gridRows,
-        vehicles = uiState.vehicles,
-        tunnels = uiState.tunnels,
-        tutorialVehicleId = uiState.tutorialVehicleId,
-        onLotTap = { gx, gy -> viewModel.onLotTap(gx, gy) },
-        modifier = Modifier.fillMaxSize(),
-      )
-    }
+          .height(screenH * 0.455f),
+    )
+
+    PlayfieldEffectsOverlay(
+      vehicles = uiState.vehicles,
+      gridCols = uiState.gridCols,
+      gridRows = uiState.gridRows,
+      jumpingPassengers = uiState.jumpingPassengers,
+      particles = uiState.particles,
+      floatingTexts = uiState.floatingTexts,
+      totalSlots = uiState.slots.size,
+      modifier = Modifier.fillMaxSize(),
+    )
 
     val screenW = maxWidth
     val hudW = minOf(screenW, 560.dp)
@@ -301,18 +339,6 @@ fun GameScreen(
       )
     }
 
-    // 7. Full-bleed Playfield Effects Overlay (Driving buses + dotted trail, jumping stickmen, confetti, "+1")
-    PlayfieldEffectsOverlay(
-      vehicles = uiState.vehicles,
-      gridCols = uiState.gridCols,
-      gridRows = uiState.gridRows,
-      jumpingPassengers = uiState.jumpingPassengers,
-      particles = uiState.particles,
-      floatingTexts = uiState.floatingTexts,
-      totalSlots = uiState.slots.size,
-      modifier = Modifier.fillMaxSize(),
-    )
-
     // 8. Pause / Settings full-screen dark dim overlay + glossy Settings card
     AnimatedVisibility(
       visible = uiState.outcome == GameOutcome.PAUSED,
@@ -383,8 +409,6 @@ fun GameScreen(
   val unlockSlotIdx = uiState.activeSlotUnlockIndex
   if (unlockSlotIdx != null) {
     UnlockSlotDialog(
-      coins = uiState.coins,
-      notice = uiState.shopNotice,
       onConfirm = { viewModel.confirmUnlockSlot(unlockSlotIdx) },
       onDismiss = { viewModel.dismissSlotUnlock() },
     )
@@ -504,3 +528,167 @@ private fun ImageBoosterButton(
     }
   }
 }
+
+@Composable
+private fun AnimatedRoadBeltDashes(
+  isPlaying: Boolean,
+  isSpeedBoosted: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  var beltOffsetDp by remember { mutableFloatStateOf(0f) }
+  var currentSpeedDp by remember { mutableFloatStateOf(42f) }
+  val latestSpeedBoosted by rememberUpdatedState(isSpeedBoosted)
+
+  LaunchedEffect(isPlaying) {
+    if (!isPlaying) return@LaunchedEffect
+    var lastFrameNanos = withFrameNanos { it }
+    while (true) {
+      val nowNanos = withFrameNanos { it }
+      val dt = ((nowNanos - lastFrameNanos) / 1_000_000_000f).coerceIn(0f, 0.05f)
+      lastFrameNanos = nowNanos
+      val targetSpeed = if (latestSpeedBoosted) 126f else 42f
+      currentSpeedDp += (targetSpeed - currentSpeedDp) * (dt * 14f).coerceAtMost(1f)
+      beltOffsetDp = (beltOffsetDp + dt * currentSpeedDp) % 10_000f
+    }
+  }
+
+  val leftCtrlNorm = remember {
+    listOf(
+      -0.0450f to -0.1201f,
+      -0.0350f to 0.0901f,
+      -0.0120f to 0.2853f,
+      0.0240f to 0.4324f,
+      0.0820f to 0.5345f,
+      0.1500f to 0.5766f,
+      0.2180f to 0.6006f,
+    )
+  }
+  val rightCtrlNorm = remember(leftCtrlNorm) {
+    leftCtrlNorm.map { (nx, ny) -> (1f - nx) to ny }
+  }
+
+  val pathCache = remember { RoadDashPathCache() }
+
+  Canvas(modifier = modifier) {
+    val w = size.width
+    val h = size.height
+    if (w <= 1f || h <= 1f) return@Canvas
+
+    if (pathCache.width != w || pathCache.height != h) {
+      val cx = 0.500f * w
+      val cy = 0.6404f * h
+      val rx = 0.2330f * w
+      val ry = 0.2418f * h
+
+      val ring =
+        Path().apply {
+          val steps = 144
+          for (i in 0 until steps) {
+            val theta = (2.0 * PI * i) / steps
+            val px = cx + rx * cos(theta).toFloat()
+            val py = cy + ry * sin(theta).toFloat()
+            if (i == 0) moveTo(px, py) else lineTo(px, py)
+          }
+          close()
+        }
+      val ringMeasure = PathMeasure().apply { setPath(ring, true) }
+      pathCache.width = w
+      pathCache.height = h
+      pathCache.ringPath = ring
+      pathCache.ringLenPx = ringMeasure.length
+      pathCache.leftArmPath = buildRoadArmDashPath(leftCtrlNorm, w, h)
+      pathCache.rightArmPath = buildRoadArmDashPath(rightCtrlNorm, w, h)
+    }
+
+    val ringLenPx = pathCache.ringLenPx
+    if (ringLenPx <= 1f) return@Canvas
+
+    val targetPeriodPx = 22.dp.toPx()
+    val periodCount = (ringLenPx / targetPeriodPx).roundToInt().coerceAtLeast(16)
+    val exactPeriodPx = ringLenPx / periodCount
+    val dashPx = exactPeriodPx * 0.44f
+    val gapPx = (exactPeriodPx - dashPx).coerceAtLeast(1f)
+    val phasePx = -(beltOffsetDp.dp.toPx() % exactPeriodPx)
+
+    val strokeWidthPx = 2.8.dp.toPx()
+    val dashIntervals = floatArrayOf(dashPx, gapPx)
+    val ringDashStroke =
+      Stroke(
+        width = strokeWidthPx,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
+        pathEffect = PathEffect.dashPathEffect(dashIntervals, phasePx),
+      )
+    val staticArmDashStroke =
+      Stroke(
+        width = strokeWidthPx,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
+        pathEffect = PathEffect.dashPathEffect(dashIntervals, 0f),
+      )
+    val dashColor = Color(0xFF7D85B2).copy(alpha = 0.92f)
+
+    // Clockwise rotating center oval dashes only
+    drawPath(path = pathCache.ringPath, color = dashColor, style = ringDashStroke)
+    // Left and right feeder arm dashes remain stationary
+    drawPath(path = pathCache.leftArmPath, color = dashColor, style = staticArmDashStroke)
+    drawPath(path = pathCache.rightArmPath, color = dashColor, style = staticArmDashStroke)
+  }
+}
+
+private class RoadDashPathCache {
+  var width: Float = -1f
+  var height: Float = -1f
+  var ringLenPx: Float = 0f
+  var ringPath: Path = Path()
+  var leftArmPath: Path = Path()
+  var rightArmPath: Path = Path()
+}
+
+private fun buildRoadArmDashPath(
+  ctrlNorm: List<Pair<Float, Float>>,
+  widthPx: Float,
+  heightPx: Float,
+): Path {
+  val n = ctrlNorm.size
+  val stepsPerSeg = 24
+  val raw = ArrayList<Pair<Float, Float>>((n - 1) * stepsPerSeg + 1)
+  for (i in 0 until n - 1) {
+    val p0 = if (i == 0) ctrlNorm[0] else ctrlNorm[i - 1]
+    val p1 = ctrlNorm[i]
+    val p2 = ctrlNorm[i + 1]
+    val p3 = if (i + 2 < n) ctrlNorm[i + 2] else ctrlNorm[n - 1]
+    for (s in 0 until stepsPerSeg) {
+      val t = s.toFloat() / stepsPerSeg
+      val t2 = t * t
+      val t3 = t2 * t
+      val nx =
+        0.5f *
+          (
+            (2f * p1.first) +
+              (-p0.first + p2.first) * t +
+              (2f * p0.first - 5f * p1.first + 4f * p2.first - p3.first) * t2 +
+              (-p0.first + 3f * p1.first - 3f * p2.first + p3.first) * t3
+          )
+      val ny =
+        0.5f *
+          (
+            (2f * p1.second) +
+              (-p0.second + p2.second) * t +
+              (2f * p0.second - 5f * p1.second + 4f * p2.second - p3.second) * t2 +
+              (-p0.second + 3f * p1.second - 3f * p2.second + p3.second) * t3
+          )
+      raw.add((nx * widthPx) to (ny * heightPx))
+    }
+  }
+  raw.add((ctrlNorm.last().first * widthPx) to (ctrlNorm.last().second * heightPx))
+
+  val stopIdx = (raw.size * 0.89f).roundToInt().coerceIn(2, raw.size)
+  return Path().apply {
+    for (i in 0 until stopIdx) {
+      val (px, py) = raw[i]
+      if (i == 0) moveTo(px, py) else lineTo(px, py)
+    }
+  }
+}
+

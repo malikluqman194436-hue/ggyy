@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Bus Jam",
+  "description": "Color-matching bus parking puzzle game with conveyor lanes, boosters, and progressive levels.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

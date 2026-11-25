@@ -116,6 +116,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     _uiState.update { it.copy(showLaneDebug = !it.showLaneDebug) }
   }
 
+  fun setSpeedBoosted(boosted: Boolean) {
+    _uiState.update { state ->
+      val effective = boosted && state.outcome == GameOutcome.PLAYING
+      if (state.isSpeedBoosted == effective) state else state.copy(isSpeedBoosted = effective)
+    }
+  }
+
   fun startLevel(levelNumber: Int = _progress.value.currentLevel) {
     val levelDef = LevelRepository.getLevel(levelNumber)
     nextEntityId = 1
@@ -439,7 +446,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val geom = laneGeometry
     val rowStep = geom.rowSpacingDp
     val maxRingRows = (geom.ringLenDp / rowStep).toInt().coerceAtLeast(12)
-    val moveStep = conveyorSpeedDpPerSec * dt
+    val effectiveConveyorSpeed =
+      if (state.isSpeedBoosted) conveyorSpeedDpPerSec * 3.0f else conveyorSpeedDpPerSec
+    val moveStep = effectiveConveyorSpeed * dt
 
     // 3a. Advance circular RING rows as synchronized 4-column rows
     val ringByRow = LinkedHashMap<Int, MutableList<Int>>()
@@ -946,8 +955,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         particles = particles,
         floatingTexts = floats,
         boardedPassengersTotal = boardedTotal,
-        conveyorOffsetPx = (it.conveyorOffsetPx + conveyorSpeedDpPerSec * dt) % 12000f,
+        conveyorOffsetPx = (it.conveyorOffsetPx + effectiveConveyorSpeed * dt) % 12000f,
         outcome = nextOutcome,
+        isSpeedBoosted = if (nextOutcome == GameOutcome.PLAYING) it.isSpeedBoosted else false,
         starsEarned = starsEarned,
         tutorialVehicleId = tutorialId,
         statusBannerText = if (statusBannerTimer > 0f) it.statusBannerText else null,
@@ -1078,19 +1088,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
   fun confirmUnlockSlot(slotIndex: Int) {
     val state = _uiState.value
-    if (state.coins < 300) {
-      soundEngine.playBonk()
-      _uiState.update { it.copy(shopNotice = "Not enough coins! Need 300 coins.") }
-      return
-    }
     soundEngine.playUnlock()
-    viewModelScope.launch { prefsRepo.adjustCoins(-300) }
     val updatedSlots =
       state.slots.mapIndexed { idx, s ->
         if (idx == slotIndex) s.copy(unlocked = true) else s
       }
+    statusBannerTimer = 1.6f
     _uiState.update {
-      it.copy(slots = updatedSlots, activeSlotUnlockIndex = null, shopNotice = null)
+      it.copy(
+        slots = updatedSlots,
+        activeSlotUnlockIndex = null,
+        shopNotice = null,
+        statusBannerText = "Parking Slot unlocked!",
+      )
     }
   }
 
@@ -1409,7 +1419,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
   fun pauseGame() {
     soundEngine.playPauseClick()
     if (_uiState.value.outcome == GameOutcome.PLAYING) {
-      _uiState.update { it.copy(outcome = GameOutcome.PAUSED) }
+      _uiState.update { it.copy(outcome = GameOutcome.PAUSED, isSpeedBoosted = false) }
     }
   }
 
@@ -1486,11 +1496,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
   fun claimStarterPack() {
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.claimStarterPack() }
+    _uiState.update { it.copy(shopNotice = "Starter Pack claimed! +1000 coins & x2 boosters") }
   }
 
   fun unlockNoAds() {
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.unlockNoAds() }
+    _uiState.update { it.copy(shopNotice = "No Ads activated!") }
+  }
+
+  fun claimNoAdsPack() {
+    soundEngine.playUnlock()
+    viewModelScope.launch { prefsRepo.claimNoAdsPack() }
+    _uiState.update { it.copy(shopNotice = "No Ads Pack claimed! +1000 coins & x1 boosters") }
+  }
+
+  fun claimSmallPack() {
+    soundEngine.playUnlock()
+    viewModelScope.launch { prefsRepo.claimSmallPack() }
+    _uiState.update { it.copy(shopNotice = "Small Pack added! +5000 coins & x1 boosters") }
   }
 
   fun addBonusCoins(amount: Int) {

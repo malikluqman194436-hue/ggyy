@@ -8,6 +8,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
+val LilitaOneFontFamily = FontFamily(
+  Font(R.font.lilita_one, FontWeight.Normal),
+)
+
 val FredokaFontFamily = FontFamily(
   Font(R.font.fredoka, FontWeight.Normal),
   Font(R.font.fredoka, FontWeight.Medium),

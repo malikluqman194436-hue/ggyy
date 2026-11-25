@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -71,6 +73,7 @@ import com.example.game.ConveyorPassenger
 import com.example.game.ConveyorSegment
 import com.example.game.Direction
 import com.example.game.FloatingText
+import com.example.game.IsoProjection
 import com.example.game.JumpingPassenger
 import com.example.game.LaneGeometry
 import com.example.game.LaneSample
@@ -116,9 +119,6 @@ private fun slotCenterXNorm(index: Int): Float =
   if (index in SLOT_CENTERS_X_NORM.indices) SLOT_CENTERS_X_NORM[index]
   else 0.1313f + index * 0.104f
 
-private const val ISO_COS = 0.78f
-private const val ISO_SIN = 0.625f
-
 private data class LotMetrics(
   val cellPx: Float,
   val stride: Float,
@@ -132,33 +132,34 @@ private data class LotMetrics(
   fun isoToScreenX(gx: Float, gy: Float): Float {
     val du = gx - gridCols * 0.5f
     val dv = gy - gridRows * 0.5f
-    return centerX + (du + dv) * cellPx * ISO_COS
+    return centerX + (du * IsoProjection.UX + dv * IsoProjection.VX) * cellPx
   }
 
   fun isoToScreenY(gx: Float, gy: Float): Float {
     val du = gx - gridCols * 0.5f
     val dv = gy - gridRows * 0.5f
-    return centerY + (-du + dv) * cellPx * ISO_SIN
+    return centerY + (du * IsoProjection.UY + dv * IsoProjection.VY) * cellPx
   }
 
   fun isoToScreen(gx: Float, gy: Float): Offset =
     Offset(isoToScreenX(gx, gy), isoToScreenY(gx, gy))
 
   fun screenToIso(sx: Float, sy: Float): Pair<Float, Float> {
-    val rx = (sx - centerX) / (cellPx * ISO_COS).coerceAtLeast(1f)
-    val ry = (sy - centerY) / (cellPx * ISO_SIN).coerceAtLeast(1f)
-    val du = (rx - ry) * 0.5f
-    val dv = (rx + ry) * 0.5f
+    val rx = (sx - centerX) / cellPx.coerceAtLeast(1f)
+    val ry = (sy - centerY) / cellPx.coerceAtLeast(1f)
+    val det = (IsoProjection.UX * IsoProjection.VY - IsoProjection.UY * IsoProjection.VX).takeIf { abs(it) > 1e-4f } ?: 1f
+    val du = (rx * IsoProjection.VY - ry * IsoProjection.VX) / det
+    val dv = (IsoProjection.UX * ry - IsoProjection.UY * rx) / det
     return (du + gridCols * 0.5f) to (dv + gridRows * 0.5f)
   }
 }
 
 private fun isoScreenDirection(dir: Direction): Pair<Float, Float> =
   when (dir) {
-    Direction.RIGHT, Direction.UP_RIGHT -> ISO_COS to -ISO_SIN
-    Direction.DOWN, Direction.DOWN_RIGHT -> ISO_COS to ISO_SIN
-    Direction.LEFT, Direction.DOWN_LEFT -> -ISO_COS to ISO_SIN
-    Direction.UP, Direction.UP_LEFT -> -ISO_COS to -ISO_SIN
+    Direction.RIGHT, Direction.UP_RIGHT -> IsoProjection.UX to IsoProjection.UY
+    Direction.DOWN, Direction.DOWN_RIGHT -> IsoProjection.VX to IsoProjection.VY
+    Direction.LEFT, Direction.DOWN_LEFT -> -IsoProjection.UX to -IsoProjection.UY
+    Direction.UP, Direction.UP_LEFT -> -IsoProjection.VX to -IsoProjection.VY
   }
 
 private fun isoViewForDirection(dir: Direction): BusView =
@@ -176,18 +177,19 @@ private fun computeLotMetrics(
   gridRows: Int,
   density: Float = 3f,
 ): LotMetrics {
-  val span = (gridCols + gridRows).coerceAtLeast(4).toFloat()
-  val cellByW = (widthPx * 0.84f) / (span * ISO_COS)
-  val cellByH = (heightPx * 0.90f) / (span * ISO_SIN)
-  val cellPx = min(cellByW, cellByH).coerceIn(18f * density, 40f * density)
+  val spanX = (gridCols * IsoProjection.UX + gridRows * IsoProjection.VX).coerceAtLeast(3.5f)
+  val spanY = (gridCols * abs(IsoProjection.UY) + gridRows * IsoProjection.VY).coerceAtLeast(3.5f)
+  val cellByW = (widthPx * 0.88f) / spanX
+  val cellByH = (heightPx * 0.90f) / spanY
+  val cellPx = min(cellByW, cellByH).coerceIn(18f * density, 44f * density)
   val gapPx = (cellPx * 0.14f).coerceIn(3.5f * density, 6f * density)
   return LotMetrics(
     cellPx = cellPx,
     stride = cellPx,
     gapPx = gapPx,
     cellBoxPx = cellPx - gapPx,
-    centerX = widthPx * 0.5f,
-    centerY = heightPx * 0.50f,
+    centerX = widthPx * 0.49f,
+    centerY = heightPx * 0.49f,
     gridCols = gridCols,
     gridRows = gridRows,
   )
@@ -774,12 +776,13 @@ fun ParkingLotCanvas(
 ) {
   val assets = rememberAssetManager()
   val textMeasurer = rememberTextMeasurer()
+  val tutorialHandBitmap = ImageBitmap.imageResource(id = R.drawable.ic_tutorial_hand)
   val infiniteTransition = rememberInfiniteTransition(label = "tutorial_pulse")
   val handBob by
     infiniteTransition.animateFloat(
       initialValue = 0f,
       targetValue = 1f,
-      animationSpec = infiniteRepeatable(tween(650, easing = LinearEasing), RepeatMode.Reverse),
+      animationSpec = infiniteRepeatable(tween(560, easing = FastOutSlowInEasing), RepeatMode.Reverse),
       label = "hand_bob",
     )
 
@@ -820,8 +823,8 @@ fun ParkingLotCanvas(
               it.stage == VehicleStage.SPAWNING_FROM_TUNNEL
           }
           .sortedWith(
-            compareBy<VehicleEntity> { -it.x + it.y }
-              .thenBy { it.x + it.y }
+            compareBy<VehicleEntity> { IsoProjection.UY * it.x + IsoProjection.VY * it.y }
+              .thenBy { IsoProjection.UX * it.x + IsoProjection.VX * it.y }
               .thenBy { it.id }
           )
 
@@ -850,7 +853,12 @@ fun ParkingLotCanvas(
             center = Offset(cx, cy),
             style = Stroke(width = 3.5.dp.toPx()),
           )
-          drawTutorialHand(center = Offset(cx + 10.dp.toPx(), cy + 12.dp.toPx() - 7.dp.toPx() * handBob))
+          drawTutorialHand(
+            handBitmap = tutorialHandBitmap,
+            targetCenter = Offset(cx, cy),
+            cellPx = cellPx,
+            tapProgress = handBob,
+          )
         }
       }
     }
@@ -924,35 +932,25 @@ private fun DrawScope.drawIsoLotBusSprite(
     return
   }
 
-  val maxW = cellPx * 1.82f * v.squashFactor
-  val maxH = cellPx * 1.62f * v.squashFactor
-  val scaleFactor = min(maxW / sprite.width.toFloat(), maxH / sprite.height.toFloat())
-  val drawW = sprite.width * scaleFactor
-  val drawH = sprite.height * scaleFactor
-
-  // Soft isometric ground shadow beneath bus wheels
-  drawOval(
-    color = Color.Black.copy(alpha = 0.22f),
-    topLeft = Offset(center.x - drawW * 0.44f, center.y - drawH * 0.16f + drawH * 0.18f),
-    size = Size(drawW * 0.88f, drawH * 0.52f),
-  )
+  // Exact uniform cell-space scale matching IsoProjection.PX_PER_CELL inside SPRITE_SIZE_PX
+  val drawSize = cellPx * (IsoProjection.SPRITE_SIZE_PX / IsoProjection.PX_PER_CELL) * v.squashFactor
 
   drawImage(
     image = sprite,
-    dstOffset = IntOffset((center.x - drawW * 0.5f).roundToInt(), (center.y - drawH * 0.5f).roundToInt()),
-    dstSize = IntSize(drawW.roundToInt().coerceAtLeast(1), drawH.roundToInt().coerceAtLeast(1)),
+    dstOffset = IntOffset((center.x - drawSize * 0.5f).roundToInt(), (center.y - drawSize * 0.5f).roundToInt()),
+    dstSize = IntSize(drawSize.roundToInt().coerceAtLeast(1), drawSize.roundToInt().coerceAtLeast(1)),
   )
 
   if (v.flashRedTimer > 0f) {
     drawOval(
-      color = AlertRed.copy(alpha = 0.44f),
-      topLeft = Offset(center.x - drawW * 0.42f, center.y - drawH * 0.36f),
-      size = Size(drawW * 0.84f, drawH * 0.72f),
+      color = AlertRed.copy(alpha = 0.42f),
+      topLeft = Offset(center.x - cellPx * 0.72f, center.y - cellPx * 0.52f),
+      size = Size(cellPx * 1.44f, cellPx * 1.04f),
     )
     drawOval(
-      color = Color.White.copy(alpha = 0.90f),
-      topLeft = Offset(center.x - drawW * 0.42f, center.y - drawH * 0.36f),
-      size = Size(drawW * 0.84f, drawH * 0.72f),
+      color = Color.White.copy(alpha = 0.88f),
+      topLeft = Offset(center.x - cellPx * 0.72f, center.y - cellPx * 0.52f),
+      size = Size(cellPx * 1.44f, cellPx * 1.04f),
       style = Stroke(width = 2.dp.toPx()),
     )
   }
@@ -1353,21 +1351,36 @@ private fun DrawScope.drawStripFrame(
   }
 }
 
-private fun DrawScope.drawTutorialHand(center: Offset) {
-  drawCircle(color = OutlineInk, radius = 13.dp.toPx(), center = center)
-  drawCircle(color = Color.White, radius = 10.5.dp.toPx(), center = center)
-  drawRoundRect(
-    color = OutlineInk,
-    topLeft = Offset(center.x - 5.dp.toPx(), center.y - 22.dp.toPx()),
-    size = Size(10.dp.toPx(), 18.dp.toPx()),
-    cornerRadius = CornerRadius(5.dp.toPx()),
-  )
-  drawRoundRect(
-    color = Color.White,
-    topLeft = Offset(center.x - 3.dp.toPx(), center.y - 20.dp.toPx()),
-    size = Size(6.dp.toPx(), 15.dp.toPx()),
-    cornerRadius = CornerRadius(3.dp.toPx()),
-  )
+private fun DrawScope.drawTutorialHand(
+  handBitmap: ImageBitmap,
+  targetCenter: Offset,
+  cellPx: Float,
+  tapProgress: Float,
+) {
+  val handW = maxOf(54.dp.toPx(), cellPx * 1.12f)
+  val handH = handW * (handBitmap.height.toFloat() / handBitmap.width.toFloat())
+  val hoverOffsetX = (12f - 10f * tapProgress).dp.toPx()
+  val hoverOffsetY = (-8f + 10f * tapProgress).dp.toPx()
+  val pressScale = 1.06f - 0.14f * tapProgress
+  val pressTilt = 4f - 7f * tapProgress
+  val tipX = targetCenter.x + hoverOffsetX
+  val tipY = targetCenter.y + hoverOffsetY
+  val dstLeft = -(handW * 0.10f)
+  val dstTop = -(handH * 0.10f)
+
+  withTransform({
+    translate(left = tipX, top = tipY)
+    rotate(degrees = pressTilt, pivot = Offset.Zero)
+    scale(scaleX = pressScale, scaleY = pressScale, pivot = Offset.Zero)
+  }) {
+    drawImage(
+      image = handBitmap,
+      srcOffset = IntOffset.Zero,
+      srcSize = IntSize(handBitmap.width, handBitmap.height),
+      dstOffset = IntOffset(dstLeft.roundToInt(), dstTop.roundToInt()),
+      dstSize = IntSize(handW.roundToInt().coerceAtLeast(1), handH.roundToInt().coerceAtLeast(1)),
+    )
+  }
 }
 
 /**
@@ -1615,18 +1628,14 @@ fun PlayfieldEffectsOverlay(
           }
         val isoSprite = assets.getBestIsoBusSprite(v.color, driveIsoView)
         if (isoSprite != null) {
-          drawOval(
-            color = Color.Black.copy(alpha = 0.22f),
-            topLeft = Offset(sampled.pos.x - curStride * 0.92f, sampled.pos.y + curStride * 0.12f),
-            size = Size(curStride * 1.84f, curStride * 0.92f),
-          )
+          val driveDrawSize = curStride * (IsoProjection.SPRITE_SIZE_PX / IsoProjection.PX_PER_CELL)
           drawSpriteUniform(
             sprite = isoSprite,
             missingLabel = "Missing bus_${v.color.assetKey}_iso",
             textMeasurer = textMeasurer,
             center = sampled.pos,
-            maxW = curStride * 1.82f,
-            maxH = curStride * 1.62f,
+            maxW = driveDrawSize,
+            maxH = driveDrawSize,
           )
         } else {
           drawLotVehicleSprite(

@@ -49,13 +49,13 @@ class SoundEffectsEngine(context: Context) {
     }
 
   private val buttonClickId = loadRaw(context, R.raw.sfx_button_click)
-  private val pauseClickId = loadRaw(context, R.raw.sfx_pause_click)
+  private val pauseClickId = buttonClickId
   private val busTapId = loadRaw(context, R.raw.sfx_bus_tap)
-  private val passengerPopId = loadRaw(context, R.raw.sfx_passenger_pop)
+  private val passengerPopId = busTapId
   private val busFullId = loadRaw(context, R.raw.sfx_bus_full)
   private val busCollisionId = loadRaw(context, R.raw.sfx_bus_collision)
   private val levelWinId = loadRaw(context, R.raw.sfx_level_win)
-  private val unlockId = loadRaw(context, R.raw.sfx_unlock)
+  private val unlockId = busFullId
   private val levelLoseId = loadRaw(context, R.raw.sfx_level_lose)
 
   private fun loadRaw(context: Context, resId: Int): Int {

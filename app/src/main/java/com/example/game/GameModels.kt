@@ -365,4 +365,5 @@ data class GameUiState(
   val usedRevive: Boolean = false,
   val bumpsCount: Int = 0,
   val showLaneDebug: Boolean = false,
+  val isSpeedBoosted: Boolean = false,
 )

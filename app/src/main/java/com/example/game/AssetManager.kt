@@ -78,8 +78,9 @@ class AssetManager(context: Context) {
       }
     }
 
-    // Preload green SUPERFAST sprites as fallback base for extra non-6 colors (white, cyan, brown)
+    // Preload green SUPERFAST sprites as fallback base for non-isometric views (top_front, top_rear, horiz, side)
     for (view in BusView.entries) {
+      if (view == BusView.ISO_1 || view == BusView.ISO_2 || view == BusView.ISO_3 || view == BusView.ISO_4) continue
       val bmp = loadArgbBitmap("bus_green_${view.key}.png")
       if (bmp != null) {
         busSprites[VehicleColor.GREEN to view] = bmp.asImageBitmap()
@@ -150,6 +151,12 @@ class AssetManager(context: Context) {
 
     synchronized(recolorLock) {
       busSprites[key]?.let { return it }
+
+      if (view == BusView.ISO_1 || view == BusView.ISO_2 || view == BusView.ISO_3 || view == BusView.ISO_4) {
+        val isoRendered = IsoBusSpriteFactory.renderIsoBus(color, view)
+        busSprites[key] = isoRendered
+        return isoRendered
+      }
 
       // Load exact full-HD bus sprite if present in assets
       loadBitmap("bus_${color.assetKey}_${view.key}.png")?.let { exact ->

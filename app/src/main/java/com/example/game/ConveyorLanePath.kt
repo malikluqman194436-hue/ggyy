@@ -58,21 +58,21 @@ class LaneGeometry(
   val boardingEndDp: Float
 
   init {
-    // Control points measured directly from the 135px-wide video roundabout centerlines (cx=0.500, cy=0.220, rx=0.252, ry=0.0765)
-    // Ordered CLOCKWISE (9:30h -> 12h -> 2:30h -> 6h boarding gate -> 9:30h) matching the rotating belt
+    // Control points matched directly to game_oval_road_loop_v3 at 0.319f height (cx=0.500, cy=0.2058, rx=0.233, ry=0.0781)
+    // Ordered CLOCKWISE (9h -> 12h -> 3h -> 6h boarding gate -> 9h) matching the rotating belt
     val ringControl = listOf(
-      pt(0.2500f, 0.2050f), // 0: left junction (9:30 o'clock)
-      pt(0.2850f, 0.1715f), // 1: top-left curve (10:30 o'clock)
-      pt(0.3760f, 0.1505f), // 2: top-left arch (11 o'clock)
-      pt(0.5000f, 0.1432f), // 3: top-center (12 o'clock)
-      pt(0.6240f, 0.1505f), // 4: top-right arch (1 o'clock)
-      pt(0.7150f, 0.1715f), // 5: top-right curve (1:30 o'clock)
-      pt(0.7500f, 0.2050f), // 6: right junction (2:30 o'clock)
-      pt(0.7300f, 0.2530f), // 7: bottom-right curve (4 o'clock)
-      pt(0.6240f, 0.2875f), // 8: bottom-right exit arch (5 o'clock)
-      pt(0.5000f, 0.2962f), // 9: bottom-center boarding gate (6 o'clock)
-      pt(0.3760f, 0.2875f), // 10: bottom-left approach arch (7 o'clock)
-      pt(0.2700f, 0.2530f), // 11: bottom-left curve (8 o'clock)
+      pt(0.2670f, 0.2058f), // 0: left junction (9 o'clock)
+      pt(0.2982f, 0.1667f), // 1: top-left curve (10 o'clock)
+      pt(0.3835f, 0.1381f), // 2: top-left arch (11 o'clock)
+      pt(0.5000f, 0.1277f), // 3: top-center (12 o'clock)
+      pt(0.6165f, 0.1381f), // 4: top-right arch (1 o'clock)
+      pt(0.7018f, 0.1667f), // 5: top-right curve (2 o'clock)
+      pt(0.7330f, 0.2058f), // 6: right junction (3 o'clock)
+      pt(0.7018f, 0.2449f), // 7: bottom-right curve (4 o'clock)
+      pt(0.6165f, 0.2735f), // 8: bottom-right exit arch (5 o'clock)
+      pt(0.5000f, 0.2839f), // 9: bottom-center boarding gate (6 o'clock)
+      pt(0.3835f, 0.2735f), // 10: bottom-left approach arch (7 o'clock)
+      pt(0.2982f, 0.2449f), // 11: bottom-left curve (8 o'clock)
     )
     ringPoints = buildClosedCatmullRom(ringControl, stepsPerSeg = 22)
     ringLenDp = ringPoints.last().dist
@@ -86,25 +86,25 @@ class LaneGeometry(
     boardingEndDp = wrapRing(boardingGateCenterDp + boardingGateHalfWindowDp)
 
     val leftArmControl = listOf(
-      pt(-0.0220f, -0.0200f),
-      pt(-0.0050f, 0.0450f),
-      pt(0.0200f, 0.1050f),
-      pt(0.0550f, 0.1480f),
-      pt(0.1100f, 0.1760f),
-      pt(0.1750f, 0.1920f),
-      pt(0.2500f, 0.2050f),
+      pt(-0.0450f, -0.0383f),
+      pt(-0.0350f,  0.0287f),
+      pt(-0.0120f,  0.0910f),
+      pt( 0.0240f,  0.1380f),
+      pt( 0.0820f,  0.1705f),
+      pt( 0.1500f,  0.1839f),
+      pt( 0.2670f,  0.2058f),
     )
     leftArmPoints = buildOpenCatmullRom(leftArmControl, stepsPerSeg = 20)
     leftArmLenDp = leftArmPoints.last().dist
 
     val rightArmControl = listOf(
-      pt(1.0220f, -0.0200f),
-      pt(1.0050f, 0.0450f),
-      pt(0.9800f, 0.1050f),
-      pt(0.9450f, 0.1480f),
-      pt(0.8900f, 0.1760f),
-      pt(0.8250f, 0.1920f),
-      pt(0.7500f, 0.2050f),
+      pt(1.0450f, -0.0383f),
+      pt(1.0350f,  0.0287f),
+      pt(1.0120f,  0.0910f),
+      pt(0.9760f,  0.1380f),
+      pt(0.9180f,  0.1705f),
+      pt(0.8500f,  0.1839f),
+      pt(0.7330f,  0.2058f),
     )
     rightArmPoints = buildOpenCatmullRom(rightArmControl, stepsPerSeg = 20)
     rightArmLenDp = rightArmPoints.last().dist

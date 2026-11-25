@@ -104,7 +104,24 @@ class GamePreferencesRepository(private val context: Context) {
       if (prefs[Keys.STARTER_PACK_CLAIMED] != true) {
         prefs[Keys.STARTER_PACK_CLAIMED] = true
         val coins = prefs[Keys.COINS] ?: 160
-        prefs[Keys.COINS] = coins + 250
+        prefs[Keys.COINS] = coins + 1000
+        prefs[Keys.BOARD_BOOSTERS] = (prefs[Keys.BOARD_BOOSTERS] ?: 0) + 2
+        prefs[Keys.REFRESH_BOOSTERS] = (prefs[Keys.REFRESH_BOOSTERS] ?: 0) + 2
+        prefs[Keys.VIP_BOOSTERS] = (prefs[Keys.VIP_BOOSTERS] ?: 0) + 2
+      }
+    }
+  }
+
+  suspend fun unlockNoAds() {
+    context.gameDataStore.edit { it[Keys.NO_ADS_UNLOCKED] = true }
+  }
+
+  suspend fun claimNoAdsPack() {
+    context.gameDataStore.edit { prefs ->
+      if (prefs[Keys.NO_ADS_UNLOCKED] != true) {
+        prefs[Keys.NO_ADS_UNLOCKED] = true
+        val coins = prefs[Keys.COINS] ?: 160
+        prefs[Keys.COINS] = coins + 1000
         prefs[Keys.BOARD_BOOSTERS] = (prefs[Keys.BOARD_BOOSTERS] ?: 0) + 1
         prefs[Keys.REFRESH_BOOSTERS] = (prefs[Keys.REFRESH_BOOSTERS] ?: 0) + 1
         prefs[Keys.VIP_BOOSTERS] = (prefs[Keys.VIP_BOOSTERS] ?: 0) + 1
@@ -112,7 +129,13 @@ class GamePreferencesRepository(private val context: Context) {
     }
   }
 
-  suspend fun unlockNoAds() {
-    context.gameDataStore.edit { it[Keys.NO_ADS_UNLOCKED] = true }
+  suspend fun claimSmallPack() {
+    context.gameDataStore.edit { prefs ->
+      val coins = prefs[Keys.COINS] ?: 160
+      prefs[Keys.COINS] = coins + 5000
+      prefs[Keys.BOARD_BOOSTERS] = (prefs[Keys.BOARD_BOOSTERS] ?: 0) + 1
+      prefs[Keys.REFRESH_BOOSTERS] = (prefs[Keys.REFRESH_BOOSTERS] ?: 0) + 1
+      prefs[Keys.VIP_BOOSTERS] = (prefs[Keys.VIP_BOOSTERS] ?: 0) + 1
+    }
   }
 }

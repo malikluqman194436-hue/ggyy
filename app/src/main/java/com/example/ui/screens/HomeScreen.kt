@@ -51,18 +51,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -81,10 +76,11 @@ import com.example.game.rememberAssetManager
 import com.example.ui.components.CoinPill
 import com.example.ui.components.HelpDialog
 import com.example.ui.components.NoAdsPackDialog
-import com.example.ui.components.PromoModalDialog
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.ShopDialog
+import com.example.ui.components.StarterPackDialog
 import com.example.ui.theme.FredokaFontFamily
+import com.example.ui.theme.LilitaOneFontFamily
 import com.example.ui.theme.OutlineInk
 import com.example.ui.theme.PlayGreen
 import kotlin.math.PI
@@ -117,10 +113,12 @@ fun HomeScreen(
   var showNoAds by remember { mutableStateOf(false) }
   var showStarterPack by remember { mutableStateOf(false) }
 
-  BackHandler(enabled = showSettings || showHelp || showNoAds) {
+  BackHandler(enabled = showSettings || showHelp || showShop || showNoAds || showStarterPack) {
     when {
       showHelp -> showHelp = false
+      showShop -> showShop = false
       showNoAds -> showNoAds = false
+      showStarterPack -> showStarterPack = false
       showSettings -> showSettings = false
     }
   }
@@ -132,12 +130,10 @@ fun HomeScreen(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val btnHeight = minOf(containerW * 0.182f, screenH * 0.086f)
     val settingsW = btnHeight * (524f / 446f)
-    val levelW = btnHeight * (1060f / 447f)
+    val levelW = btnHeight * (733f / 315f)
     val shopW = btnHeight * (518f / 446f)
     val sideEdgePad = containerW * 0.032f
     val bottomRowPad = maxOf(screenH * 0.036f, navBottom + 8.dp)
-
-    AnimatedHomeSkyBackground(modifier = Modifier.fillMaxSize())
 
     Image(
       painter = painterResource(id = R.drawable.home_play_fg),
@@ -232,43 +228,48 @@ fun HomeScreen(
               .testTag("play_level_button"),
           contentAlignment = Alignment.Center,
         ) {
-          if (progress.currentLevel == 1) {
-            Image(
-              painter = painterResource(id = R.drawable.btn_home_level),
-              contentDescription = "LEVEL 1",
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.fillMaxSize(),
+          Image(
+            painter = painterResource(id = R.drawable.btn_home_level_blank),
+            contentDescription = "LEVEL ${progress.currentLevel}",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+          )
+          val levelText = "LEVEL ${progress.currentLevel}"
+          val levelTextStyle =
+            MaterialTheme.typography.titleLarge.copy(
+              fontFamily = LilitaOneFontFamily,
+              fontSize = (btnHeight.value * 0.43f).coerceIn(25f, 33f).sp,
+              fontWeight = FontWeight.Normal,
+              letterSpacing = 0.4.sp,
             )
-          } else {
-            Image(
-              painter = painterResource(id = R.drawable.btn_home_level_blank),
-              contentDescription = "LEVEL ${progress.currentLevel}",
-              contentScale = ContentScale.Fit,
-              modifier = Modifier.fillMaxSize(),
-            )
-            val levelTextStyle =
-              MaterialTheme.typography.titleLarge.copy(
-                fontFamily = FredokaFontFamily,
-                fontSize = 23.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.6.sp,
-              )
-            Text(
-              text = "LEVEL ${progress.currentLevel}",
-              style =
-                levelTextStyle.copy(
-                  drawStyle = Stroke(width = 8.5f, join = StrokeJoin.Round),
-                ),
-              color = Color(0xFF04145C),
-              maxLines = 1,
-            )
-            Text(
-              text = "LEVEL ${progress.currentLevel}",
-              style = levelTextStyle,
-              color = Color.White,
-              maxLines = 1,
-            )
-          }
+          // Subtle bottom 3D drop shadow matching reference LEVEL 1 text
+          Text(
+            text = levelText,
+            style =
+              levelTextStyle.copy(
+                drawStyle = Stroke(width = 11.5f, join = StrokeJoin.Round),
+              ),
+            color = Color(0xFF07112B),
+            maxLines = 1,
+            modifier = Modifier.offset(y = 2.dp),
+          )
+          // Crisp dark-navy cartoon outline around thick white letters
+          Text(
+            text = levelText,
+            style =
+              levelTextStyle.copy(
+                drawStyle = Stroke(width = 10.5f, join = StrokeJoin.Round),
+              ),
+            color = Color(0xFF0B1A3E),
+            maxLines = 1,
+          )
+          // Bright white foreground fill
+          Text(
+            text = levelText,
+            style = levelTextStyle,
+            color = Color.White,
+            maxLines = 1,
+          )
         }
 
         HomeBarButton(
@@ -333,6 +334,25 @@ fun HomeScreen(
         },
       )
     }
+
+    AnimatedVisibility(
+      visible = showStarterPack,
+      enter = fadeIn(),
+      exit = fadeOut(),
+      modifier = Modifier.fillMaxSize(),
+    ) {
+      StarterPackDialog(
+        alreadyClaimed = progress.starterPackClaimed,
+        onActivate = {
+          onClaimStarterPack()
+          showStarterPack = false
+        },
+        onDismiss = {
+          onButtonClick()
+          showStarterPack = false
+        },
+      )
+    }
   }
 
   if (showHelp) {
@@ -358,196 +378,6 @@ fun HomeScreen(
         showShop = false
       },
     )
-  }
-
-  if (showStarterPack) {
-    PromoModalDialog(
-      title = "STARTER PACK",
-      description =
-        if (progress.starterPackClaimed) {
-          "Starter Pack already claimed! Enjoy your bonus coins and boosters."
-        } else {
-          "Claim your free Starter Pack: +250 Coins plus 1 VIP, 1 Refresh, and 1 Board Clear booster!"
-        },
-      buttonText = "Claim Free Pack",
-      alreadyClaimed = progress.starterPackClaimed,
-      onAction = {
-        onClaimStarterPack()
-        showStarterPack = false
-      },
-      onDismiss = {
-        onButtonClick()
-        showStarterPack = false
-      },
-    )
-  }
-}
-
-private data class SkyCloudSpec(
-  val yFraction: Float,
-  val widthFraction: Float,
-  val heightFraction: Float,
-  val initialOffset: Float,
-  val cyclesPerLoop: Int,
-  val alpha: Float,
-  val isBackLayer: Boolean,
-  val variantB: Boolean = false,
-)
-
-private val HOME_SKY_CLOUDS =
-  listOf(
-    // Distant smaller clouds (slower parallax, softly nestled above horizon & behind upper corners)
-    SkyCloudSpec(yFraction = 0.056f, widthFraction = 0.34f, heightFraction = 0.13f, initialOffset = 0.08f, cyclesPerLoop = 2, alpha = 0.84f, isBackLayer = true, variantB = true),
-    SkyCloudSpec(yFraction = 0.105f, widthFraction = 0.30f, heightFraction = 0.115f, initialOffset = 0.44f, cyclesPerLoop = 2, alpha = 0.80f, isBackLayer = true, variantB = false),
-    SkyCloudSpec(yFraction = 0.070f, widthFraction = 0.36f, heightFraction = 0.135f, initialOffset = 0.77f, cyclesPerLoop = 2, alpha = 0.86f, isBackLayer = true, variantB = true),
-    // Foreground fluffy cumulus clouds gliding clearly forward across left corner, center roof gap, and right corner
-    SkyCloudSpec(yFraction = 0.146f, widthFraction = 0.44f, heightFraction = 0.165f, initialOffset = 0.04f, cyclesPerLoop = 3, alpha = 0.96f, isBackLayer = false, variantB = false),
-    SkyCloudSpec(yFraction = 0.084f, widthFraction = 0.48f, heightFraction = 0.18f, initialOffset = 0.31f, cyclesPerLoop = 3, alpha = 0.98f, isBackLayer = false, variantB = true),
-    SkyCloudSpec(yFraction = 0.154f, widthFraction = 0.42f, heightFraction = 0.16f, initialOffset = 0.58f, cyclesPerLoop = 3, alpha = 0.95f, isBackLayer = false, variantB = false),
-    SkyCloudSpec(yFraction = 0.110f, widthFraction = 0.46f, heightFraction = 0.17f, initialOffset = 0.84f, cyclesPerLoop = 3, alpha = 0.97f, isBackLayer = false, variantB = true),
-  )
-
-private fun buildNormalizedCloudPath(variantB: Boolean): Path {
-  val rects =
-    if (!variantB) {
-      listOf(
-        androidx.compose.ui.geometry.Rect(0.03f, 0.36f, 0.37f, 0.90f),
-        androidx.compose.ui.geometry.Rect(0.16f, 0.14f, 0.50f, 0.72f),
-        androidx.compose.ui.geometry.Rect(0.33f, 0.00f, 0.69f, 0.72f),
-        androidx.compose.ui.geometry.Rect(0.53f, 0.18f, 0.85f, 0.74f),
-        androidx.compose.ui.geometry.Rect(0.65f, 0.38f, 0.97f, 0.90f),
-      )
-    } else {
-      listOf(
-        androidx.compose.ui.geometry.Rect(0.04f, 0.34f, 0.36f, 0.88f),
-        androidx.compose.ui.geometry.Rect(0.19f, 0.08f, 0.52f, 0.68f),
-        androidx.compose.ui.geometry.Rect(0.42f, 0.03f, 0.76f, 0.70f),
-        androidx.compose.ui.geometry.Rect(0.62f, 0.24f, 0.95f, 0.86f),
-      )
-    }
-
-  var result =
-    Path().apply {
-      addRoundRect(
-        androidx.compose.ui.geometry.RoundRect(
-          left = 0.05f,
-          top = 0.46f,
-          right = 0.95f,
-          bottom = 0.92f,
-          cornerRadius = CornerRadius(0.23f, 0.23f),
-        )
-      )
-    }
-  for (r in rects) {
-    val lobe = Path().apply { addOval(r) }
-    val merged = Path()
-    merged.op(result, lobe, PathOperation.Union)
-    result = merged
-  }
-  return result
-}
-
-@Composable
-private fun AnimatedHomeSkyBackground(modifier: Modifier = Modifier) {
-  val cloudPathA = remember { buildNormalizedCloudPath(variantB = false) }
-  val cloudPathB = remember { buildNormalizedCloudPath(variantB = true) }
-
-  val infiniteTransition = rememberInfiniteTransition(label = "home_sky_clouds")
-  // Seamless shared phase [0f..1f] over 48s so 2x (24s pass) and 3x (16s pass) clouds both wrap cleanly with zero jumps
-  val driftProgress by
-    infiniteTransition.animateFloat(
-      initialValue = 0f,
-      targetValue = 1f,
-      animationSpec = infiniteRepeatable(tween(durationMillis = 48_000, easing = LinearEasing), RepeatMode.Restart),
-      label = "cloud_drift_phase",
-    )
-
-  Canvas(modifier = modifier) {
-    val skyHeight = size.height * 0.38f
-    drawRect(
-      brush =
-        Brush.verticalGradient(
-          colorStops =
-            arrayOf(
-              0.00f to Color(0xFF0072FA),
-              0.30f to Color(0xFF029DFC),
-              0.68f to Color(0xFF4BD0FB),
-              1.00f to Color(0xFF56D5FB),
-            ),
-          startY = 0f,
-          endY = skyHeight,
-        ),
-      topLeft = Offset.Zero,
-      size = Size(size.width, skyHeight),
-    )
-
-    val maxCloudWidth = size.width * 0.54f
-    val wrapSpan = size.width + maxCloudWidth * 1.45f
-    val startX = -maxCloudWidth * 0.72f
-
-    HOME_SKY_CLOUDS.forEach { spec ->
-      val cloudW = size.width * spec.widthFraction
-      val cloudH = cloudW * 0.44f * (spec.heightFraction / 0.16f)
-      val t = (spec.initialOffset + driftProgress * spec.cyclesPerLoop) % 1f
-      val centerX = startX + t * wrapSpan
-      val centerY = size.height * spec.yFraction
-      drawCartoonCloud(
-        unitPath = if (spec.variantB) cloudPathB else cloudPathA,
-        centerX = centerX,
-        centerY = centerY,
-        cloudWidth = cloudW,
-        cloudHeight = cloudH,
-        alpha = spec.alpha,
-        coolShadowColor = if (spec.isBackLayer) Color(0xFFBBE6FF) else Color(0xFFB0E0FF),
-      )
-    }
-  }
-}
-
-private fun DrawScope.drawCartoonCloud(
-  unitPath: Path,
-  centerX: Float,
-  centerY: Float,
-  cloudWidth: Float,
-  cloudHeight: Float,
-  alpha: Float,
-  coolShadowColor: Color,
-) {
-  val left = centerX - cloudWidth * 0.5f
-  val top = centerY - cloudHeight * 0.5f
-  val shadowYOffset = 0.09f
-
-  val shadowBrush =
-    Brush.verticalGradient(
-      colors =
-        listOf(
-          coolShadowColor.copy(alpha = 0.76f * alpha),
-          coolShadowColor.copy(alpha = 0.92f * alpha),
-        ),
-      startY = shadowYOffset,
-      endY = 1f + shadowYOffset,
-    )
-
-  val bodyBrush =
-    Brush.verticalGradient(
-      colorStops =
-        arrayOf(
-          0.00f to Color.White.copy(alpha = alpha),
-          0.58f to Color(0xFFF4FBFF).copy(alpha = alpha),
-          1.00f to Color(0xFFD7F0FF).copy(alpha = alpha),
-        ),
-      startY = 0f,
-      endY = 1f,
-    )
-
-  withTransform({
-    translate(left = left, top = top)
-    scale(scaleX = cloudWidth, scaleY = cloudHeight, pivot = Offset.Zero)
-  }) {
-    withTransform({ translate(left = 0f, top = shadowYOffset) }) {
-      drawPath(path = unitPath, brush = shadowBrush)
-    }
-    drawPath(path = unitPath, brush = bodyBrush)
   }
 }
 
