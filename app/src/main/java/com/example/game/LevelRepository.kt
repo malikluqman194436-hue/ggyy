@@ -7,7 +7,7 @@ import kotlin.random.Random
 object LevelRepository {
 
   private const val BUSES_PER_LEVEL = 12
-  private const val BUS_CAPACITY = 40
+  private const val BUS_CAPACITY = 16
 
   @Suppress("unused")
   private var appAssets: AssetManager? = null
@@ -21,6 +21,9 @@ object LevelRepository {
     if (safeLevel == 1) {
       return buildLevel1DiamondClassic()
     }
+    if (safeLevel == 2) {
+      return buildLevel2TrafficJamClassic()
+    }
     return generateTrafficJamLevel(safeLevel)
   }
 
@@ -29,13 +32,7 @@ object LevelRepository {
     return VehicleColor.busColors.take(colorCount)
   }
 
-  private fun freeSlotsForLevel(level: Int): Int {
-    return when {
-      level <= 4 -> 4
-      level <= 9 -> 3
-      else -> 2
-    }
-  }
+  private fun freeSlotsForLevel(@Suppress("UNUSED_PARAMETER") level: Int): Int = 4
 
   /**
    * Level 1 exact 14-bus isometric diamond layout matching the user's Level 1 reference video:
@@ -48,24 +45,24 @@ object LevelRepository {
     val specs =
       listOf(
         // Top-right UP_LEFT pair + far-right YELLOW UP_LEFT
-        VehicleSpec(x = 5.0f, y = 1.0f, color = VehicleColor.BLUE, direction = Direction.UP, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 6.0f, y = 1.0f, color = VehicleColor.RED, direction = Direction.UP, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 7.5f, y = 4.0f, color = VehicleColor.YELLOW, direction = Direction.UP, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 5.0f, y = 1.0f, color = VehicleColor.BLUE, direction = Direction.UP, capacity = 40),
+        VehicleSpec(x = 6.0f, y = 1.0f, color = VehicleColor.RED, direction = Direction.UP, capacity = 40),
+        VehicleSpec(x = 7.5f, y = 4.0f, color = VehicleColor.YELLOW, direction = Direction.UP, capacity = 40),
         // Bottom-left DOWN_RIGHT buses
-        VehicleSpec(x = 0.5f, y = 3.0f, color = VehicleColor.YELLOW, direction = Direction.DOWN, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 1.5f, y = 5.0f, color = VehicleColor.BLUE, direction = Direction.DOWN, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 2.5f, y = 5.0f, color = VehicleColor.RED, direction = Direction.DOWN, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 0.5f, y = 3.0f, color = VehicleColor.YELLOW, direction = Direction.DOWN, capacity = 40),
+        VehicleSpec(x = 1.5f, y = 5.0f, color = VehicleColor.BLUE, direction = Direction.DOWN, capacity = 40),
+        VehicleSpec(x = 2.5f, y = 5.0f, color = VehicleColor.RED, direction = Direction.DOWN, capacity = 40),
         // Left-middle DOWN_LEFT pair
-        VehicleSpec(x = 2.0f, y = 2.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 2.0f, y = 3.5f, color = VehicleColor.BLUE, direction = Direction.LEFT, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 2.0f, y = 2.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = 40),
+        VehicleSpec(x = 2.0f, y = 3.5f, color = VehicleColor.BLUE, direction = Direction.LEFT, capacity = 40),
         // Center stack (2 UP_RIGHT + 2 DOWN_LEFT)
-        VehicleSpec(x = 3.0f, y = 1.5f, color = VehicleColor.YELLOW, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 4.0f, y = 2.5f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 4.0f, y = 3.5f, color = VehicleColor.YELLOW, direction = Direction.LEFT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 4.0f, y = 4.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 3.0f, y = 1.5f, color = VehicleColor.YELLOW, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 4.0f, y = 2.5f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 4.0f, y = 3.5f, color = VehicleColor.YELLOW, direction = Direction.LEFT, capacity = 40),
+        VehicleSpec(x = 4.0f, y = 4.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = 40),
         // Right stack (RED DOWN_LEFT under hand + BLUE UP_RIGHT)
-        VehicleSpec(x = 6.0f, y = 3.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = BUS_CAPACITY),
-        VehicleSpec(x = 6.0f, y = 4.5f, color = VehicleColor.BLUE, direction = Direction.RIGHT, capacity = BUS_CAPACITY),
+        VehicleSpec(x = 6.0f, y = 3.5f, color = VehicleColor.RED, direction = Direction.LEFT, capacity = 40),
+        VehicleSpec(x = 6.0f, y = 4.5f, color = VehicleColor.BLUE, direction = Direction.RIGHT, capacity = 40),
       )
 
     return assembleFromSpecs(
@@ -77,6 +74,75 @@ object LevelRepository {
       freeSlots = 4,
       isTutorial = true,
       tutorialHint = "Tap the clear bus to pick up matching passengers!",
+    )
+  }
+
+  /**
+   * Level 2 exact 36-bus orthographic layout matching the user's Level 2 reference image:
+   * - 10x10 screen-aligned grid with horizontal, vertical, and 45-degree diagonal buses
+   * - 3 bus sizes: Small = 16 passengers, Medium = 24 passengers, Big = 40 passengers
+   */
+  private fun buildLevel2TrafficJamClassic(): LevelDefinition {
+    val specs =
+      listOf(
+        // Left vertical column (4 buses facing DOWN)
+        VehicleSpec(x = 0.714f, y = 1.062f, color = VehicleColor.GREEN, direction = Direction.DOWN, capacity = 24),
+        VehicleSpec(x = 0.714f, y = 2.813f, color = VehicleColor.RED, direction = Direction.DOWN, capacity = 24),
+        VehicleSpec(x = 0.714f, y = 4.725f, color = VehicleColor.YELLOW, direction = Direction.DOWN, capacity = 24),
+        VehicleSpec(x = 0.667f, y = 7.000f, color = VehicleColor.GREEN, direction = Direction.DOWN, capacity = 24),
+        // Top horizontal row (4 buses facing RIGHT)
+        VehicleSpec(x = 2.167f, y = 0.625f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = 16),
+        VehicleSpec(x = 3.833f, y = 0.625f, color = VehicleColor.YELLOW, direction = Direction.RIGHT, capacity = 24),
+        VehicleSpec(x = 5.964f, y = 0.625f, color = VehicleColor.PURPLE, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 8.119f, y = 0.625f, color = VehicleColor.GREEN, direction = Direction.RIGHT, capacity = 16),
+        // Bottom horizontal row (4 buses facing RIGHT)
+        VehicleSpec(x = 1.048f, y = 8.812f, color = VehicleColor.PURPLE, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 3.321f, y = 8.812f, color = VehicleColor.WHITE, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 5.536f, y = 8.812f, color = VehicleColor.PURPLE, direction = Direction.RIGHT, capacity = 40),
+        VehicleSpec(x = 7.690f, y = 8.812f, color = VehicleColor.RED, direction = Direction.RIGHT, capacity = 40),
+        // Right vertical column (3 buses facing UP)
+        VehicleSpec(x = 9.500f, y = 4.562f, color = VehicleColor.RED, direction = Direction.UP, capacity = 16),
+        VehicleSpec(x = 9.429f, y = 6.175f, color = VehicleColor.GREEN, direction = Direction.UP, capacity = 16),
+        VehicleSpec(x = 9.417f, y = 8.188f, color = VehicleColor.BLUE, direction = Direction.UP, capacity = 24),
+        // Center spine (White UP, Yellow RIGHT)
+        VehicleSpec(x = 5.262f, y = 3.850f, color = VehicleColor.WHITE, direction = Direction.UP, capacity = 24),
+        VehicleSpec(x = 5.333f, y = 5.062f, color = VehicleColor.YELLOW, direction = Direction.RIGHT, capacity = 40),
+        // Upper-left diagonal cluster (4 buses facing DOWN_LEFT)
+        VehicleSpec(x = 2.202f, y = 1.850f, color = VehicleColor.RED, direction = Direction.DOWN_LEFT, capacity = 16),
+        VehicleSpec(x = 2.143f, y = 3.125f, color = VehicleColor.BLUE, direction = Direction.DOWN_LEFT, capacity = 16),
+        VehicleSpec(x = 3.833f, y = 2.188f, color = VehicleColor.YELLOW, direction = Direction.DOWN_LEFT, capacity = 40),
+        VehicleSpec(x = 3.833f, y = 3.500f, color = VehicleColor.GREEN, direction = Direction.DOWN_LEFT, capacity = 16),
+        // Mid-left diagonal (Yellow DOWN_LEFT)
+        VehicleSpec(x = 2.167f, y = 4.700f, color = VehicleColor.YELLOW, direction = Direction.DOWN_LEFT, capacity = 24),
+        // Lower-left diagonal cluster (5 buses)
+        VehicleSpec(x = 2.202f, y = 6.375f, color = VehicleColor.BLUE, direction = Direction.UP_LEFT, capacity = 16),
+        VehicleSpec(x = 3.512f, y = 6.188f, color = VehicleColor.GREEN, direction = Direction.UP_LEFT, capacity = 24),
+        VehicleSpec(x = 2.202f, y = 7.562f, color = VehicleColor.RED, direction = Direction.UP_LEFT, capacity = 16),
+        VehicleSpec(x = 3.548f, y = 7.425f, color = VehicleColor.BROWN, direction = Direction.UP_LEFT, capacity = 24),
+        VehicleSpec(x = 4.857f, y = 6.650f, color = VehicleColor.RED, direction = Direction.UP_RIGHT, capacity = 24),
+        // Upper-right diagonal cluster (4 buses)
+        VehicleSpec(x = 6.488f, y = 2.025f, color = VehicleColor.GREEN, direction = Direction.DOWN_RIGHT, capacity = 40),
+        VehicleSpec(x = 7.976f, y = 1.975f, color = VehicleColor.RED, direction = Direction.DOWN_RIGHT, capacity = 24),
+        VehicleSpec(x = 7.917f, y = 3.325f, color = VehicleColor.YELLOW, direction = Direction.DOWN_RIGHT, capacity = 16),
+        VehicleSpec(x = 6.571f, y = 3.525f, color = VehicleColor.BLUE, direction = Direction.DOWN_LEFT, capacity = 16),
+        // Lower-right diagonal cluster (5 buses)
+        VehicleSpec(x = 8.036f, y = 4.850f, color = VehicleColor.GREEN, direction = Direction.UP_RIGHT, capacity = 24),
+        VehicleSpec(x = 7.119f, y = 6.438f, color = VehicleColor.YELLOW, direction = Direction.UP_LEFT, capacity = 40),
+        VehicleSpec(x = 8.238f, y = 6.375f, color = VehicleColor.RED, direction = Direction.UP_LEFT, capacity = 16),
+        VehicleSpec(x = 6.429f, y = 7.675f, color = VehicleColor.GREEN, direction = Direction.UP_RIGHT, capacity = 24),
+        VehicleSpec(x = 7.833f, y = 7.725f, color = VehicleColor.BLUE, direction = Direction.UP_RIGHT, capacity = 16),
+      )
+
+    return assembleFromSpecs(
+      level = 2,
+      cols = 10,
+      rows = 10,
+      vehicles = specs,
+      conveyorSpeed = 40f,
+      freeSlots = 4,
+      isTutorial = false,
+      tutorialHint = null,
+      isOrthographicLot = true,
     )
   }
 
@@ -136,6 +202,12 @@ object LevelRepository {
 
       for (busIdx in 0 until BUSES_PER_LEVEL) {
         val color = levelColors[busIdx]
+        val busCapacity =
+          when (busIdx % 3) {
+            0 -> 40
+            1 -> 24
+            else -> 16
+          }
         val samplePool = allCandidates.shuffled(rng).take(160)
 
         var bestCand: PlacementCandidate? = null
@@ -150,7 +222,7 @@ object LevelRepository {
               id = nextId,
               color = color,
               direction = cand.dir,
-              capacity = BUS_CAPACITY,
+              capacity = busCapacity,
               x = cand.cx,
               y = cand.cy,
             )
@@ -181,7 +253,7 @@ object LevelRepository {
             y = bestEntity.y,
             color = bestEntity.color,
             direction = bestEntity.direction,
-            capacity = BUS_CAPACITY,
+            capacity = busCapacity,
           )
         )
         nextId++
@@ -285,6 +357,7 @@ object LevelRepository {
     freeSlots: Int = 4,
     isTutorial: Boolean = false,
     tutorialHint: String? = null,
+    isOrthographicLot: Boolean = false,
   ): LevelDefinition {
     val exitOrder = computeExitOrder(vehicles, cols, rows)
     val passengerSequence = mutableListOf<VehicleColor>()
@@ -321,6 +394,7 @@ object LevelRepository {
       freeSlots = freeSlots,
       isTutorial = isTutorial,
       tutorialHintText = tutorialHint,
+      isOrthographicLot = isOrthographicLot,
     )
   }
 

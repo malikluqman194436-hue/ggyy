@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,6 +31,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.game.GameViewModel
+import com.example.ui.components.LocalPlayButtonClick
 import com.example.ui.screens.GameScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.theme.BusJamTheme
@@ -84,7 +86,10 @@ class MainActivity : ComponentActivity() {
           pendingTransitionTarget = null
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
+        CompositionLocalProvider(
+          LocalPlayButtonClick provides { gameViewModel.soundEngine.playClick() },
+        ) {
+          Box(modifier = Modifier.fillMaxSize()) {
           if (!inGame) {
             HomeScreen(
               progress = progress,
@@ -99,6 +104,7 @@ class MainActivity : ComponentActivity() {
               onToggleVibration = { gameViewModel.toggleVibration(it) },
               onToggleCloudSave = { gameViewModel.toggleCloudSave(it) },
               onCycleLanguage = { gameViewModel.cycleLanguage() },
+              onChangePassengerSize = { gameViewModel.setPassengerSizeScale(it) },
               onBuyBooster = { gameViewModel.buyBoosterFromShop(it) },
               onClaimFreeCoins = { gameViewModel.addBonusCoins(100) },
               onClaimStarterPack = { gameViewModel.claimStarterPack() },
@@ -154,6 +160,7 @@ class MainActivity : ComponentActivity() {
               drawPath(path = maskPath, color = Color.Black)
             }
           }
+        }
         }
       }
     }

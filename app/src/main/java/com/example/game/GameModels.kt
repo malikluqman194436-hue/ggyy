@@ -195,9 +195,15 @@ data class LevelDefinition(
   val freeSlots: Int = 4,
   val isTutorial: Boolean = false,
   val tutorialHintText: String? = null,
+  val isOrthographicLot: Boolean = false,
 )
 
-fun vehicleLengthForCapacity(@Suppress("UNUSED_PARAMETER") capacity: Int): Float = 1.84f
+fun vehicleLengthForCapacity(capacity: Int): Float =
+  when {
+    capacity <= 16 -> 1.24f
+    capacity <= 24 -> 1.50f
+    else -> 1.72f
+  }
 
 const val DEPART_CLOSE_FRACTION = 0.26f / 0.96f
 
@@ -213,6 +219,7 @@ data class VehicleEntity(
   val boardedCount: Int = 0,
   val reservedCount: Int = 0,
   val bumpOffset: Float = 0f,
+  val bumpMaxDist: Float = 0f,
   val shakePhase: Float = 0f,
   val flashRedTimer: Float = 0f,
   val animProgress: Float = 0f,
@@ -288,6 +295,8 @@ data class Particle(
   val life: Float,
   val maxLife: Float,
   val isConfetti: Boolean = false,
+  val isSmokePuff: Boolean = false,
+  val isSpark: Boolean = false,
 )
 
 data class FloatingText(
@@ -333,6 +342,7 @@ data class GameUiState(
   val levelNumber: Int = 1,
   val gridCols: Int = 5,
   val gridRows: Int = 5,
+  val isOrthographicLot: Boolean = false,
   val vehicles: List<VehicleEntity> = emptyList(),
   val tunnels: List<TunnelState> = emptyList(),
   val slots: List<WaitingSlotState> = emptyList(),
@@ -366,4 +376,10 @@ data class GameUiState(
   val bumpsCount: Int = 0,
   val showLaneDebug: Boolean = false,
   val isSpeedBoosted: Boolean = false,
+  val passengerSizeScale: Float = 1.0f,
+  val passengerHeadScale: Float = 1.0f,
+  val passengerWidthScale: Float = 1.0f,
+  val passengerHeightScale: Float = 1.0f,
+  val showBoardUnlockedPopup: Boolean = false,
+  val showBoardBoosterHand: Boolean = false,
 )

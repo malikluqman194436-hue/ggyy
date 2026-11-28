@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -40,6 +41,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
   private var statusBannerTimer = 0f
   private var introRingFillComplete = false
   private var armFeedLatched = false
+  private var armFeedPreferRight = false
   private var laneGeometry = LaneGeometry(411f, 915f)
 
   init {
@@ -59,7 +61,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             vibrationEnabled = p.vibrationEnabled,
             cloudSaveEnabled = p.cloudSaveEnabled,
             languageLabel = p.languageLabel,
+            passengerSizeScale = p.passengerSizeScale,
+            passengerHeadScale = p.passengerHeadScale,
+            passengerWidthScale = p.passengerWidthScale,
+            passengerHeightScale = p.passengerHeightScale,
           )
+        }
+        val targetShape =
+          if (_uiState.value.levelNumber >= 2) TrackLoopShape.LEVEL2_ROUNDED_OVAL
+          else TrackLoopShape.LEVEL1_OVAL
+        if (kotlin.math.abs(laneGeometry.passengerSizeScale - p.passengerSizeScale) > 0.001f ||
+          laneGeometry.trackShape != targetShape
+        ) {
+          laneGeometry =
+            LaneGeometry(
+              widthDp = laneGeometry.widthDp,
+              heightDp = laneGeometry.heightDp,
+              passengerSizeScale = p.passengerSizeScale,
+              trackShape = targetShape,
+            )
         }
       }
     }
@@ -67,13 +87,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
   fun updateLaneViewport(widthDp: Float, heightDp: Float) {
     if (widthDp < 100f || heightDp < 100f) return
+    val targetShape =
+      if (_uiState.value.levelNumber >= 2) TrackLoopShape.LEVEL2_ROUNDED_OVAL
+      else TrackLoopShape.LEVEL1_OVAL
     if (kotlin.math.abs(laneGeometry.widthDp - widthDp) < 4f &&
-      kotlin.math.abs(laneGeometry.heightDp - heightDp) < 4f
+      kotlin.math.abs(laneGeometry.heightDp - heightDp) < 4f &&
+      laneGeometry.trackShape == targetShape
     ) {
       return
     }
     val oldGeom = laneGeometry
-    val newGeom = LaneGeometry(widthDp, heightDp)
+    val newGeom = LaneGeometry(widthDp, heightDp, _uiState.value.passengerSizeScale, targetShape)
     laneGeometry = newGeom
 
     // Rescale active conveyor positions proportionally while keeping queued arms behind the ring curb
@@ -125,6 +149,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
   fun startLevel(levelNumber: Int = _progress.value.currentLevel) {
     val levelDef = LevelRepository.getLevel(levelNumber)
+    val targetShape =
+      if (levelDef.levelNumber >= 2) TrackLoopShape.LEVEL2_ROUNDED_OVAL
+      else TrackLoopShape.LEVEL1_OVAL
+    laneGeometry =
+      LaneGeometry(
+        widthDp = laneGeometry.widthDp,
+        heightDp = laneGeometry.heightDp,
+        passengerSizeScale = _progress.value.passengerSizeScale,
+        trackShape = targetShape,
+      )
     nextEntityId = 1
     conveyorSpeedDpPerSec = levelDef.conveyorSpeedDpPerSec
     perBusBoardingCooldown.clear()
@@ -134,6 +168,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     statusBannerTimer = 0f
     introRingFillComplete = true
     armFeedLatched = false
+    armFeedPreferRight = false
 
     val vehicles =
       levelDef.vehicles.map { spec ->
@@ -172,7 +207,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
       }
 
-    val passengers = buildInitialConveyorPassengers(levelDef.passengerSequence)
+    val passengers = buildInitialConveyorPassengers(levelDef.passengerSequence, levelDef.levelNumber)
     val initialTutorialId =
       if (levelDef.isTutorial) {
         CollisionEngine.firstUnblockedVehicleId(vehicles, levelDef.gridCols, levelDef.gridRows)
@@ -186,6 +221,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         levelNumber = levelDef.levelNumber,
         gridCols = levelDef.gridCols,
         gridRows = levelDef.gridRows,
+        isOrthographicLot = levelDef.isOrthographicLot,
         vehicles = vehicles,
         tunnels = tunnels,
         slots = slots,
@@ -202,12 +238,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         vipBoosters = p.vipBoosters,
         soundEnabled = p.soundEnabled,
         vibrationEnabled = p.vibrationEnabled,
+        cloudSaveEnabled = p.cloudSaveEnabled,
+        languageLabel = p.languageLabel,
+        passengerSizeScale = p.passengerSizeScale,
+        passengerHeadScale = p.passengerHeadScale,
+        passengerWidthScale = p.passengerWidthScale,
+        passengerHeightScale = p.passengerHeightScale,
         showLaneDebug = prev.showLaneDebug,
+        showBoardUnlockedPopup = false,
+        showBoardBoosterHand = false,
       )
     }
   }
 
-  private fun buildInitialConveyorPassengers(sequence: List<VehicleColor>): List<ConveyorPassenger> {
+  private fun buildInitialConveyorPassengers(
+    sequence: List<VehicleColor>,
+    levelNumber: Int = 1,
+  ): List<ConveyorPassenger> {
     val geom = laneGeometry
     val rowStep = geom.rowSpacingDp
     val rows = sequence.chunked(4)
@@ -215,22 +262,35 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val ringRowCount = minOf(rows.size, maxRingRows)
     val ringPitch = if (ringRowCount > 0) geom.ringLenDp / ringRowCount else rowStep
     val overflowCount = (rows.size - ringRowCount).coerceAtLeast(0)
-    // Fill both LEFT_ARM and RIGHT_ARM completely off the top corners of the screen
-    val leftOverflowCount = (overflowCount / 2).coerceIn(0, overflowCount)
+    // Level 1 queues overflow on LEFT_ARM (up to 48) then RIGHT_ARM; Level 2+ fills BOTH arms evenly.
+    val splitBothArmsEvenly = levelNumber >= 2
+    val leftOverflowCount = overflowCount.coerceAtMost(48)
     val leftHoldDist = (geom.leftArmLenDp - geom.armHoldStopOffsetDp).coerceAtLeast(0f)
     val rightHoldDist = (geom.rightArmLenDp - geom.armHoldStopOffsetDp).coerceAtLeast(0f)
 
     val result = ArrayList<ConveyorPassenger>(sequence.size)
     var qIdx = 0
+    var leftRank = 0
+    var rightRank = 0
 
     for (rowIdx in rows.indices) {
       val rowColors = rows[rowIdx]
       val (segment, distDp, branch) =
         when {
           rowIdx < ringRowCount -> {
-            // Evenly fill 100% of the oval RING with zero seam gap at t = 0
+            // Evenly fill 100% of the center loop with zero seam gap at t = 0
             val d = geom.wrapRing(geom.boardingGateCenterDp - rowIdx * ringPitch)
             Triple(ConveyorSegment.RING, d, 0)
+          }
+          splitBothArmsEvenly -> {
+            val overflowIdx = rowIdx - ringRowCount
+            if (overflowIdx % 2 == 0) {
+              val d = leftHoldDist - (leftRank++) * rowStep
+              Triple(ConveyorSegment.LEFT_ARM, d, 0)
+            } else {
+              val d = rightHoldDist - (rightRank++) * rowStep
+              Triple(ConveyorSegment.RIGHT_ARM, d, 1)
+            }
           }
           rowIdx < ringRowCount + leftOverflowCount -> {
             val rank = rowIdx - ringRowCount
@@ -302,13 +362,18 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         v = v.copy(flashRedTimer = (v.flashRedTimer - dt).coerceAtLeast(0f))
       }
       if (v.shakePhase > 0f) {
-        val nextPhase = (v.shakePhase - dt * 3.8f).coerceAtLeast(0f)
-        val bumpCurve = sin(nextPhase * PI).toFloat()
+        val nextPhase = (v.shakePhase - dt * 3.5f).coerceAtLeast(0f)
+        val progress = 1f - nextPhase
+        val lunge =
+          if (progress < 0.26f) (progress / 0.26f)
+          else ((1f - progress) / 0.74f).coerceAtLeast(0f)
+        val targetDist = if (v.bumpMaxDist > 0f) v.bumpMaxDist else v.bumpOffset
         v =
           v.copy(
             shakePhase = nextPhase,
-            bumpOffset = if (nextPhase <= 0f) 0f else v.bumpOffset * (nextPhase / state.vehicles[i].shakePhase.coerceAtLeast(0.01f)),
-            squashFactor = 1f - 0.08f * bumpCurve,
+            bumpOffset = if (nextPhase <= 0f) 0f else targetDist * lunge,
+            bumpMaxDist = if (nextPhase <= 0f) 0f else v.bumpMaxDist,
+            squashFactor = if (nextPhase <= 0f) 1f else 1f - 0.10f * sin(lunge * PI * 0.5).toFloat(),
           )
       } else if (v.bounceTimer > 0f) {
         val bt = (v.bounceTimer - dt * 3.5f).coerceAtLeast(0f)
@@ -354,13 +419,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         VehicleStage.DRIVING_TO_SLOT -> {
-          val p = (v.animProgress + dt * 1.15f).coerceAtMost(1f)
+          val p = (v.animProgress + dt * 1.32f).coerceAtMost(1f)
           v =
             if (p >= 1f) {
               v.copy(
                 animProgress = 1f,
                 stage = VehicleStage.PARKED,
-                bounceTimer = 0.26f,
+                bounceTimer = 0.24f,
                 roofOpenProgress = 0f,
               )
             } else {
@@ -370,13 +435,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
         VehicleStage.PARKED -> {
           if (v.roofOpenProgress < 1f) {
-            v = v.copy(roofOpenProgress = (v.roofOpenProgress + dt / 0.30f).coerceAtMost(1f))
+            v = v.copy(roofOpenProgress = (v.roofOpenProgress + dt / 0.18f).coerceAtMost(1f))
           }
         }
 
         VehicleStage.DEPARTING_FULL -> {
-          // ~0.26s sliding roof closing in slot (p <= DEPART_CLOSE_FRACTION of 0.96s), then 0.70s pull-out & departure
-          val p = (v.animProgress + dt / 0.96f).coerceAtMost(1f)
+          // Crisp roof close in slot (p <= DEPART_CLOSE_FRACTION), then fast pull-out & departure freeing the slot
+          val p = (v.animProgress + dt / 0.78f).coerceAtMost(1f)
           val closingRoof = (1f - p / DEPART_CLOSE_FRACTION).coerceIn(0f, 1f)
           if (p >= DEPART_CLOSE_FRACTION) {
             val sIdx = v.slotIndex
@@ -488,7 +553,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (step > 0) {
           val gapAhead = geom.forwardRingDistance(nextDist, prevRowMovedDist)
           if (gapAhead > rowStep * 1.02f && gapAhead < geom.ringLenDp * 0.45f) {
-            val extra = ((gapAhead - rowStep) * 6.0f * dt).coerceAtMost(moveStep * 0.85f)
+            val extra = ((gapAhead - rowStep) * 9.0f * dt).coerceAtMost(moveStep * 2.6f)
             nextDist = geom.wrapRing(nextDist + extra)
           }
           val postGap = geom.forwardRingDistance(nextDist, prevRowMovedDist)
@@ -503,37 +568,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
       }
     }
 
-    // 3b. Hold feeder arms cleanly outside ring curbs until real room opens; drain LEFT_ARM 100% before RIGHT_ARM moves
+    // 3b. Hold feeder arms cleanly outside ring curbs until room opens on the ring; drain LEFT_ARM before RIGHT_ARM
     var currentRingRowCount = ringByRow.size
     val leftArmHasRows = passengers.any { it.segment == ConveyorSegment.LEFT_ARM }
-    val parkedWaitColors =
-      vehicles
-        .asSequence()
-        .filter { it.stage == VehicleStage.PARKED && it.reservedCount < it.capacity }
-        .map { it.color }
-        .toHashSet()
-    val ringHasAnyParkedMatch =
-      parkedWaitColors.isNotEmpty() &&
-        passengers.any { it.segment == ConveyorSegment.RING && it.color in parkedWaitColors }
-    // Hysteresis: open arm admission once ring drains below ~85% (or needs parked-bus match), keep flowing smoothly up to ~94%
-    val openThresholdRows = (maxRingRows * 0.85f).toInt().coerceAtLeast(10)
-    val closeThresholdRows = (maxRingRows * 0.94f).toInt().coerceAtLeast(openThresholdRows + 2)
-    val needArmColorForParked = parkedWaitColors.isNotEmpty() && !ringHasAnyParkedMatch
-    if (currentRingRowCount <= openThresholdRows || needArmColorForParked) {
-      armFeedLatched = true
-    } else if (currentRingRowCount >= closeThresholdRows) {
-      armFeedLatched = false
-    }
-    val ringOpenForArmFeed = armFeedLatched && currentRingRowCount < maxRingRows
+    armFeedLatched = currentRingRowCount < maxRingRows
+    val ringOpenForArmFeed = armFeedLatched
 
-    fun advanceArm(seg: ConveyorSegment, armLen: Float, entryRingDist: Float, allowRingEntry: Boolean, allowAdvance: Boolean) {
+    fun advanceArm(seg: ConveyorSegment, armLen: Float, entryRingDist: Float, allowRingEntry: Boolean, allowAdvance: Boolean): Boolean {
       val armByRow = LinkedHashMap<Int, MutableList<Int>>()
       for (idx in passengers.indices) {
         if (passengers[idx].segment == seg) {
           armByRow.getOrPut(passengers[idx].rowGroupId) { mutableListOf() }.add(idx)
         }
       }
-      if (armByRow.isEmpty()) return
+      if (armByRow.isEmpty()) return false
 
       val sortedArmRows =
         armByRow.entries
@@ -543,8 +591,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
           .sortedByDescending { it.second }
 
       val holdStopDist = (armLen - geom.armHoldStopOffsetDp).coerceAtLeast(0f)
+      val transitDist = (armLen - holdStopDist).coerceAtLeast(1f)
       if (!allowAdvance) {
-        // Freeze this arm completely in idle standing pose until permitted to move (RIGHT_ARM waits for LEFT_ARM)
+        // Freeze this arm completely in idle standing pose until permitted to move (Level 1 RIGHT_ARM waits for LEFT_ARM)
         for ((_, _, rowIndices) in sortedArmRows) {
           for (idx in rowIndices) {
             if (passengers[idx].isWalking) {
@@ -552,58 +601,107 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             }
           }
         }
-        return
+        return false
       }
 
+      var enteredRing = false
+      val entrySpeedMult = 1.65f
       var blockerDistOnArm = Float.MAX_VALUE
       for (rank in sortedArmRows.indices) {
         val (_, curDist, rowIndices) = sortedArmRows[rank]
-        var candidate = curDist + moveStep
-        if (rank == 0 && candidate >= holdStopDist) {
-          val canEnterByCapacity = allowRingEntry && ringOpenForArmFeed && currentRingRowCount < maxRingRows
-          val ringClear =
-            canEnterByCapacity &&
-              passengers.none { other ->
-                other.segment == ConveyorSegment.RING &&
-                  minOf(
-                    geom.forwardRingDistance(other.distDp, entryRingDist),
-                    geom.forwardRingDistance(entryRingDist, other.distDp),
-                  ) < rowStep * 1.05f
-              }
-          if (ringClear && candidate >= armLen) {
-            val ringStart = geom.wrapRing(entryRingDist + (candidate - armLen))
-            for (idx in rowIndices) {
-              passengers[idx] = passengers[idx].copy(segment = ConveyorSegment.RING, distDp = ringStart, isWalking = true)
-            }
-            currentRingRowCount++
-            blockerDistOnArm = armLen + (candidate - armLen)
-            continue
-          } else if (!ringClear) {
-            candidate = holdStopDist.coerceAtLeast(curDist)
+        val alreadyCrossing = rank == 0 && curDist > holdStopDist + 0.05f
+        val stepMultiplier = if (alreadyCrossing) entrySpeedMult else 1.0f
+        var candidate = curDist + moveStep * stepMultiplier
+        if (!alreadyCrossing && blockerDistOnArm < Float.MAX_VALUE) {
+          val maxTarget = min(blockerDistOnArm - rowStep, holdStopDist)
+          val gapAheadArm = (maxTarget - candidate).coerceAtLeast(0f)
+          if (gapAheadArm > 0.02f) {
+            candidate += (gapAheadArm * 9.0f * dt).coerceAtMost(moveStep * 2.5f)
           }
         }
-        val clamped = min(candidate, blockerDistOnArm - rowStep)
+
+        if (rank == 0 && candidate >= holdStopDist) {
+          if (alreadyCrossing) {
+            if (candidate >= armLen) {
+              val ringStart = geom.wrapRing(entryRingDist + (candidate - armLen))
+              for (idx in rowIndices) {
+                passengers[idx] = passengers[idx].copy(segment = ConveyorSegment.RING, distDp = ringStart, isWalking = true)
+              }
+              currentRingRowCount++
+              enteredRing = true
+              blockerDistOnArm = armLen + (candidate - armLen)
+              continue
+            }
+          } else {
+            val canEnterByCapacity = allowRingEntry && ringOpenForArmFeed && currentRingRowCount < maxRingRows
+            val ringDriftDuringEntry = transitDist / entrySpeedMult
+            val ringClear =
+              canEnterByCapacity &&
+                passengers.none { other ->
+                  if (other.segment != ConveyorSegment.RING) return@none false
+                  val arrivalDist = geom.wrapRing(other.distDp + ringDriftDuringEntry)
+                  val arrBehind = geom.forwardRingDistance(arrivalDist, entryRingDist)
+                  val arrAhead = geom.forwardRingDistance(entryRingDist, arrivalDist)
+                  arrBehind < rowStep * 0.90f || arrAhead < rowStep * 0.90f
+                }
+            if (ringClear) {
+              candidate = holdStopDist + moveStep * entrySpeedMult
+              if (candidate >= armLen) {
+                val ringStart = geom.wrapRing(entryRingDist + (candidate - armLen))
+                for (idx in rowIndices) {
+                  passengers[idx] = passengers[idx].copy(segment = ConveyorSegment.RING, distDp = ringStart, isWalking = true)
+                }
+                currentRingRowCount++
+                enteredRing = true
+                blockerDistOnArm = armLen + (candidate - armLen)
+                continue
+              }
+            } else {
+              candidate = holdStopDist
+            }
+          }
+        }
+
+        // Only rank == 0 when cleared may cross holdStopDist; all waiting rows behind stay strictly <= holdStopDist
+        val maxAllowed =
+          if (rank == 0) blockerDistOnArm - rowStep
+          else min(blockerDistOnArm - rowStep, holdStopDist)
+        val clamped = min(candidate, maxAllowed)
         val moved = clamped > curDist + 0.001f
         for (idx in rowIndices) {
           passengers[idx] = passengers[idx].copy(distDp = clamped, isWalking = moved)
         }
         blockerDistOnArm = clamped
       }
+      return enteredRing
     }
-    advanceArm(
-      seg = ConveyorSegment.LEFT_ARM,
-      armLen = geom.leftArmLenDp,
-      entryRingDist = geom.leftEntryRingDistDp,
-      allowRingEntry = true,
-      allowAdvance = true,
-    )
-    advanceArm(
-      seg = ConveyorSegment.RIGHT_ARM,
-      armLen = geom.rightArmLenDp,
-      entryRingDist = geom.rightEntryRingDistDp,
-      allowRingEntry = !leftArmHasRows,
-      allowAdvance = !leftArmHasRows,
-    )
+
+    if (state.levelNumber >= 2) {
+      if (armFeedPreferRight) {
+        val rightEntered = advanceArm(ConveyorSegment.RIGHT_ARM, geom.rightArmLenDp, geom.rightEntryRingDistDp, true, true)
+        val leftEntered = advanceArm(ConveyorSegment.LEFT_ARM, geom.leftArmLenDp, geom.leftEntryRingDistDp, true, true)
+        if (rightEntered && !leftEntered) armFeedPreferRight = false
+      } else {
+        val leftEntered = advanceArm(ConveyorSegment.LEFT_ARM, geom.leftArmLenDp, geom.leftEntryRingDistDp, true, true)
+        val rightEntered = advanceArm(ConveyorSegment.RIGHT_ARM, geom.rightArmLenDp, geom.rightEntryRingDistDp, true, true)
+        if (leftEntered && !rightEntered) armFeedPreferRight = true
+      }
+    } else {
+      advanceArm(
+        seg = ConveyorSegment.LEFT_ARM,
+        armLen = geom.leftArmLenDp,
+        entryRingDist = geom.leftEntryRingDistDp,
+        allowRingEntry = true,
+        allowAdvance = true,
+      )
+      advanceArm(
+        seg = ConveyorSegment.RIGHT_ARM,
+        armLen = geom.rightArmLenDp,
+        entryRingDist = geom.rightEntryRingDistDp,
+        allowRingEntry = !leftArmHasRows,
+        allowAdvance = !leftArmHasRows,
+      )
+    }
 
     // 4. Orderly 4-by-4 whole-row boarding inside the front boarding gate (never splits a matching 4-row)
     val gateRows =
@@ -633,7 +731,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .withIndex()
             .filter { (_, v) ->
               v.stage == VehicleStage.PARKED &&
-                v.roofOpenProgress >= 0.18f &&
+                v.roofOpenProgress >= 0.14f &&
                 v.color == rowColor &&
                 v.reservedCount < v.capacity &&
                 (perBusBoardingCooldown[v.id] ?: 0f) <= 0f
@@ -667,7 +765,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 startNormX = (posDp.first / geom.widthDp).coerceIn(0.05f, 0.95f),
                 startNormY = (posDp.second / geom.heightDp).coerceIn(0.05f, 0.44f),
                 progress = 0f,
-                speed = 1f / (0.25f + mIdx * 0.03f),
+                speed = 1f / (0.16f + mIdx * 0.022f),
               )
             )
             loseGraceTimer = 0f
@@ -692,7 +790,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 startNormX = (posDp.first / geom.widthDp).coerceIn(0.05f, 0.95f),
                 startNormY = (posDp.second / geom.heightDp).coerceIn(0.05f, 0.44f),
                 progress = 0f,
-                speed = 1f / (0.25f + mIdx * 0.03f),
+                speed = 1f / (0.16f + mIdx * 0.022f),
               )
             )
             loseGraceTimer = 0f
@@ -706,7 +804,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
               .withIndex()
               .filter { (_, v) ->
                 v.stage == VehicleStage.PARKED &&
-                  v.roofOpenProgress >= 0.18f &&
+                  v.roofOpenProgress >= 0.14f &&
                   v.color == candidate.color &&
                   v.reservedCount < v.capacity &&
                   (perBusBoardingCooldown[v.id] ?: 0f) <= 0f
@@ -729,7 +827,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 startNormX = (posDp.first / geom.widthDp).coerceIn(0.05f, 0.95f),
                 startNormY = (posDp.second / geom.heightDp).coerceIn(0.05f, 0.44f),
                 progress = 0f,
-                speed = 1f / (0.25f + mIdx * 0.03f),
+                speed = 1f / (0.16f + mIdx * 0.022f),
               )
             )
             loseGraceTimer = 0f
@@ -738,7 +836,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
       }
     }
     for (busId in busesUsedThisFrame) {
-      perBusBoardingCooldown[busId] = 0.22f
+      perBusBoardingCooldown[busId] = 0.08f
     }
     if (removedIndices.isNotEmpty()) {
       val removeSet = removedIndices.toHashSet()
@@ -765,6 +863,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val vIdx = vehicles.indexOfFirst { it.id == j.targetVehicleId }
         if (vIdx >= 0) {
           val bus = vehicles[vIdx]
+          if (bus.stage == VehicleStage.DEPARTING_FULL) continue
           val newBoarded = (bus.boardedCount + 1).coerceAtMost(bus.capacity)
           boardedTotal++
           soundEngine.playPop(comboCounter)
@@ -778,7 +877,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
               Particle(
                 id = nextEntityId++,
                 x = slotXNorm + (Random.nextFloat() - 0.5f) * 0.025f,
-                y = 0.352f,
+                y = 0.332f,
                 vx = (Random.nextFloat() - 0.5f) * 0.14f,
                 vy = -0.08f - Random.nextFloat() * 0.10f,
                 color = Color.White,
@@ -801,15 +900,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
               FloatingText(
                 id = nextEntityId++,
                 x = slotXNorm,
-                y = 0.338f,
+                y = 0.315f,
                 text = "FULL!",
                 color = GoldCoin,
                 life = 0.9f,
                 maxLife = 0.9f,
               )
             )
-            spawnSmokeCloud(particles, slotXNorm, 0.383f, count = 10)
-            spawnConfettiBurst(particles, slotXNorm, 0.375f, count = 18)
+            spawnSmokeCloud(particles, slotXNorm, 0.359f, count = 10)
+            spawnConfettiBurst(particles, slotXNorm, 0.352f, count = 18)
           } else {
             vehicles[vIdx] = bus.copy(boardedCount = newBoarded, bounceTimer = 0.18f)
           }
@@ -822,14 +921,27 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     for (p in particles) {
       val nl = p.life - dt
       if (nl > 0f) {
-        aliveParticles.add(
-          p.copy(
-            x = p.x + p.vx * dt,
-            y = p.y + p.vy * dt,
-            vy = p.vy + 0.55f * dt,
-            life = nl,
+        if (p.isSmokePuff) {
+          val drag = (1f - 2.6f * dt).coerceAtLeast(0.75f)
+          aliveParticles.add(
+            p.copy(
+              x = p.x + p.vx * dt,
+              y = p.y + p.vy * dt,
+              vx = p.vx * drag,
+              vy = p.vy * drag - 0.12f * dt,
+              life = nl,
+            )
           )
-        )
+        } else {
+          aliveParticles.add(
+            p.copy(
+              x = p.x + p.vx * dt,
+              y = p.y + p.vy * dt,
+              vy = p.vy + 0.55f * dt,
+              life = nl,
+            )
+          )
+        }
       }
     }
     particles = aliveParticles
@@ -986,19 +1098,48 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     if (!sweep.isClear) {
       soundEngine.playBonk()
+      val lungeDist = (sweep.freeDistance + 0.08f).coerceIn(0.14f, 0.34f)
+      val impactAdvance = sweep.freeDistance.coerceAtMost(0.55f) + tapped.lengthInCells * 0.44f
+      val impactGx = tapped.x + tapped.direction.dx * impactAdvance
+      val impactGy = tapped.y + tapped.direction.dy * impactAdvance
+      val (impactNormX, impactNormY) =
+        isoGridToPlayfieldNorm(
+          impactGx,
+          impactGy,
+          state.gridCols,
+          state.gridRows,
+          state.isOrthographicLot,
+        )
+
+      val collisionParticles = state.particles.toMutableList()
+      spawnCollisionEffects(collisionParticles, impactNormX, impactNormY)
+
       val updated =
         state.vehicles.map { v ->
           when (v.id) {
             tapped.id ->
               v.copy(
-                bumpOffset = min(sweep.freeDistance, 0.085f),
+                bumpOffset = 0f,
+                bumpMaxDist = lungeDist,
                 shakePhase = 1f,
               )
-            sweep.blockerId -> v.copy(flashRedTimer = 0.36f)
+            sweep.blockerId ->
+              v.copy(
+                flashRedTimer = 0.36f,
+                bumpOffset = 0f,
+                bumpMaxDist = 0.06f,
+                shakePhase = 0.65f,
+              )
             else -> v
           }
         }
-      _uiState.update { it.copy(vehicles = updated, bumpsCount = it.bumpsCount + 1) }
+      _uiState.update {
+        it.copy(
+          vehicles = updated,
+          particles = collisionParticles,
+          bumpsCount = it.bumpsCount + 1,
+        )
+      }
       return
     }
 
@@ -1006,13 +1147,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     if (freeSlotIndex < 0) {
       soundEngine.playBonk()
       statusBannerTimer = 1.6f
+      val (nx, ny) =
+        isoGridToPlayfieldNorm(
+          tapped.x,
+          tapped.y,
+          state.gridCols,
+          state.gridRows,
+          state.isOrthographicLot,
+        )
+      val fullBayParticles = state.particles.toMutableList()
+      spawnCollisionEffects(fullBayParticles, nx, ny)
       val updated =
         state.vehicles.map { v ->
-          if (v.id == tapped.id) v.copy(bumpOffset = 0.085f, shakePhase = 0.9f) else v
+          if (v.id == tapped.id) v.copy(bumpOffset = 0f, bumpMaxDist = 0.14f, shakePhase = 0.9f) else v
         }
       _uiState.update {
         it.copy(
           vehicles = updated,
+          particles = fullBayParticles,
           statusBannerText = "Waiting bay full! Board passengers or unlock a slot.",
         )
       }
@@ -1040,13 +1192,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         }
       }
 
-    // Spawn dust puff particles at tapped isometric vehicle
+    // Spawn dust puff particles at tapped vehicle
     val newParticles = state.particles.toMutableList()
-    val du = tapped.x - state.gridCols * 0.5f
-    val dv = tapped.y - state.gridRows * 0.5f
-    val diamondSpan = (state.gridCols + state.gridRows).coerceAtLeast(4).toFloat()
-    val normX = (0.50f + ((du + dv) / diamondSpan) * 0.86f).coerceIn(0.06f, 0.94f)
-    val normY = (0.675f + ((-du + dv) / diamondSpan) * 0.32f).coerceIn(0.45f, 0.90f)
+    val (normX, normY) =
+      isoGridToPlayfieldNorm(
+        tapped.x,
+        tapped.y,
+        state.gridCols,
+        state.gridRows,
+        state.isOrthographicLot,
+      )
     repeat(6) {
       newParticles.add(
         Particle(
@@ -1088,6 +1243,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
   fun confirmUnlockSlot(slotIndex: Int) {
     val state = _uiState.value
+    soundEngine.playClick()
     soundEngine.playUnlock()
     val updatedSlots =
       state.slots.mapIndexed { idx, s ->
@@ -1122,6 +1278,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         BoosterType.VIP_SLOT -> state.vipBoosters
       }
 
+    if (type == BoosterType.BOARD && state.showBoardBoosterHand) {
+      _uiState.update { it.copy(showBoardBoosterHand = false) }
+    }
+
     if (owned <= 0) {
       _uiState.update { it.copy(activeBoosterShop = type, shopNotice = null) }
       return
@@ -1134,10 +1294,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val state = _uiState.value
     if (state.coins < type.costCoins) {
       soundEngine.playBonk()
-      _uiState.update { it.copy(shopNotice = "Not enough coins! Need ${type.costCoins} coins.") }
       return
     }
 
+    soundEngine.playClick()
     soundEngine.playDing()
     viewModelScope.launch {
       prefsRepo.adjustCoins(-type.costCoins)
@@ -1151,6 +1311,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun claimFreeBooster(type: BoosterType) {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch {
       when (type) {
@@ -1176,6 +1337,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
       _uiState.update { it.copy(shopNotice = "Not enough coins! Need ${type.costCoins} coins.") }
       return
     }
+    soundEngine.playClick()
     soundEngine.playDing()
     viewModelScope.launch {
       prefsRepo.adjustCoins(-type.costCoins)
@@ -1192,28 +1354,103 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     val state = _uiState.value
     when (type) {
       BoosterType.BOARD -> {
-        val parkedBuses =
-          state.vehicles.filter {
-            it.stage == VehicleStage.PARKED && it.reservedCount < it.capacity
+        var workingVehicles = state.vehicles.toMutableList()
+        var workingSlots = state.slots.toMutableList()
+
+        var bufferedBuses =
+          workingVehicles
+            .filter {
+              (it.stage == VehicleStage.PARKED || it.stage == VehicleStage.DRIVING_TO_SLOT) &&
+                it.reservedCount < it.capacity
+            }
+            .sortedBy { it.slotIndex }
+
+        if (bufferedBuses.isEmpty()) {
+          val freeSlotIdx = workingSlots.indexOfFirst { it.unlocked && it.occupantVehicleId == null }
+          val lotVehicles = workingVehicles.filter { it.stage == VehicleStage.IN_LOT }
+          val ringColors =
+            state.passengers
+              .asSequence()
+              .filter { it.segment == ConveyorSegment.RING }
+              .map { it.color }
+              .toSet()
+          val trackColors = state.passengers.asSequence().map { it.color }.toSet()
+          val autoPick =
+            lotVehicles.firstOrNull { v ->
+              v.color in ringColors && CollisionEngine.checkPath(v, lotVehicles, state.gridCols, state.gridRows).isClear
+            }
+              ?: lotVehicles.firstOrNull { v ->
+                v.color in trackColors && CollisionEngine.checkPath(v, lotVehicles, state.gridCols, state.gridRows).isClear
+              }
+              ?: lotVehicles.firstOrNull { it.color in ringColors }
+              ?: lotVehicles.firstOrNull { it.color in trackColors }
+
+          if (freeSlotIdx >= 0 && autoPick != null) {
+            workingSlots[freeSlotIdx] = workingSlots[freeSlotIdx].copy(occupantVehicleId = autoPick.id)
+            val pickIdx = workingVehicles.indexOfFirst { it.id == autoPick.id }
+            if (pickIdx >= 0) {
+              workingVehicles[pickIdx] =
+                autoPick.copy(
+                  stage = VehicleStage.PARKED,
+                  slotIndex = freeSlotIdx,
+                  animProgress = 1f,
+                  roofOpenProgress = 1f,
+                  bounceTimer = 0.24f,
+                )
+              bufferedBuses = listOf(workingVehicles[pickIdx])
+            }
           }
-        if (parkedBuses.isEmpty()) {
+        }
+
+        if (bufferedBuses.isEmpty()) {
           statusBannerTimer = 1.5f
           _uiState.update { it.copy(statusBannerText = "Park a bus in a waiting slot first!") }
           return
         }
 
-        val updatedVehicles = state.vehicles.toMutableList()
+        // Activate the primary buffered bus in the waiting slots that has matching passengers on track
+        val activeBus =
+          bufferedBuses.firstOrNull { bus -> state.passengers.any { it.color == bus.color } }
+            ?: bufferedBuses.first()
+
+        val updatedVehicles = workingVehicles
+        val vIdx = updatedVehicles.indexOfFirst { it.id == activeBus.id }
+        if (vIdx < 0) return
+
+        var bus =
+          updatedVehicles[vIdx].copy(
+            stage = VehicleStage.PARKED,
+            animProgress = 1f,
+            roofOpenProgress = 1f,
+            bounceTimer = 0.24f,
+          )
         val remainingPassengers = state.passengers.toMutableList()
         val newJumps = state.jumpingPassengers.toMutableList()
         var boardedAny = false
 
-        for (vIdx in updatedVehicles.indices) {
-          var bus = updatedVehicles[vIdx]
-          if (bus.stage != VehicleStage.PARKED) continue
-          while (bus.reservedCount < bus.capacity) {
-            val matchIdx = remainingPassengers.indexOfFirst { it.color == bus.color }
-            if (matchIdx < 0) break
-            val passenger = remainingPassengers.removeAt(matchIdx)
+        val needed = (bus.capacity - bus.reservedCount).coerceAtLeast(0)
+        // Pick matching passengers of the active bus color only (RING first, closest first), leaving all other colors untouched
+        val matchedEntries =
+          remainingPassengers
+            .withIndex()
+            .filter { it.value.color == bus.color }
+            .sortedWith(
+              compareBy<IndexedValue<ConveyorPassenger>>(
+                {
+                  when (it.value.segment) {
+                    ConveyorSegment.RING -> 0
+                    ConveyorSegment.LEFT_ARM -> 1
+                    ConveyorSegment.RIGHT_ARM -> 2
+                  }
+                },
+                { -it.value.distDp },
+              )
+            )
+            .take(needed)
+
+        if (matchedEntries.isNotEmpty()) {
+          val indicesToRemove = matchedEntries.map { it.index }.toHashSet()
+          matchedEntries.forEachIndexed { launchIdx, (_, passenger) ->
             bus = bus.copy(reservedCount = bus.reservedCount + 1)
             boardedAny = true
             val (_, posDp) = laneGeometry.passengerCoords(passenger.segment, passenger.distDp, passenger.colInRow)
@@ -1223,15 +1460,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 color = passenger.color,
                 targetVehicleId = bus.id,
                 targetSlotIndex = bus.slotIndex,
-                startNormX = (posDp.first / laneGeometry.widthDp).coerceIn(0.05f, 0.95f),
-                startNormY = (posDp.second / laneGeometry.heightDp).coerceIn(0.05f, 0.36f),
+                startNormX = (posDp.first / laneGeometry.widthDp).coerceIn(0.03f, 0.97f),
+                startNormY = (posDp.second / laneGeometry.heightDp).coerceIn(0.02f, 0.44f),
                 progress = 0f,
-                speed = 1f / 0.35f,
+                // Fast, crisp staggered flight so counter ticks down smoothly (e.g. 24 -> 0) as each passenger lands
+                speed = 1f / (0.16f + launchIdx * 0.014f),
               )
             )
           }
-          updatedVehicles[vIdx] = bus
+          val filtered = remainingPassengers.filterIndexed { idx, _ -> idx !in indicesToRemove }
+          remainingPassengers.clear()
+          remainingPassengers.addAll(filtered)
         }
+
+        updatedVehicles[vIdx] = bus
 
         if (!boardedAny) {
           statusBannerTimer = 1.5f
@@ -1243,14 +1485,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
           remainingPassengers[k] = remainingPassengers[k].copy(queueIndex = k)
         }
         soundEngine.playWhoosh()
+        loseGraceTimer = 0f
         viewModelScope.launch {
           prefsRepo.setBoosterCount(board = (_progress.value.boardBoosters - 1).coerceAtLeast(0))
         }
         _uiState.update {
           it.copy(
             vehicles = updatedVehicles,
+            slots = workingSlots,
             passengers = remainingPassengers,
             jumpingPassengers = newJumps,
+            boardBoosters = (it.boardBoosters - 1).coerceAtLeast(0),
           )
         }
       }
@@ -1259,7 +1504,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val inLot = state.vehicles.filter { it.stage == VehicleStage.IN_LOT }
         if (inLot.isEmpty()) return
 
-        val reshuffled = reshuffleSolvable(inLot, state.tunnels, state.gridCols, state.gridRows)
+        val reshuffled =
+          reshuffleSolvable(
+            inLot = inLot,
+            tunnels = state.tunnels,
+            cols = state.gridCols,
+            rows = state.gridRows,
+            isOrthographicLot = state.isOrthographicLot,
+          )
         val nonLot = state.vehicles.filter { it.stage != VehicleStage.IN_LOT }
         soundEngine.playWhoosh()
         viewModelScope.launch {
@@ -1308,7 +1560,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     tunnels: List<TunnelState>,
     cols: Int,
     rows: Int,
+    isOrthographicLot: Boolean = false,
   ): List<VehicleEntity> {
+    if (isOrthographicLot || inLot.any { it.direction.isDiagonal }) {
+      val rng = Random(System.nanoTime())
+      val byCap = inLot.groupBy { it.capacity }
+      val recoloredById = mutableMapOf<Int, VehicleColor>()
+      for ((_, group) in byCap) {
+        val colors = group.map { it.color }.shuffled(rng)
+        group.forEachIndexed { idx, v -> recoloredById[v.id] = colors[idx] }
+      }
+      return inLot.map { v -> v.copy(color = recoloredById[v.id] ?: v.color) }
+    }
+
     val dirs = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
 
     val positions = inLot.map { Pair(it.x, it.y) }
@@ -1436,14 +1700,97 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun nextLevel() {
+    val state = _uiState.value
     soundEngine.playClick()
-    startLevel(_uiState.value.levelNumber + 1)
+    if (state.levelNumber == 1 && state.outcome == GameOutcome.WON && !state.showBoardUnlockedPopup) {
+      soundEngine.playUnlock()
+      _uiState.update { it.copy(showBoardUnlockedPopup = true) }
+    } else {
+      startLevel(state.levelNumber + 1)
+    }
   }
 
   fun claimWinBonusAndNext(bonusCoins: Int = 400) {
+    soundEngine.playClick()
     soundEngine.playUnlock()
+    val state = _uiState.value
     viewModelScope.launch { prefsRepo.adjustCoins(bonusCoins) }
-    startLevel(_uiState.value.levelNumber + 1)
+    if (state.levelNumber == 1 && state.outcome == GameOutcome.WON && !state.showBoardUnlockedPopup) {
+      _uiState.update { it.copy(showBoardUnlockedPopup = true) }
+    } else {
+      startLevel(state.levelNumber + 1)
+    }
+  }
+
+  fun confirmBoardUnlockedAndStartNextLevel() {
+    soundEngine.playClick()
+    soundEngine.playLockOpen()
+    val currentBoard = _progress.value.boardBoosters
+    if (currentBoard <= 0) {
+      viewModelScope.launch { prefsRepo.setBoosterCount(board = 1) }
+    }
+    val nextLvl = (_uiState.value.levelNumber + 1).coerceAtLeast(2)
+    startLevel(nextLvl)
+
+    // Immediately pull a matching clear bus from the grid into the first waiting slot so it stands ready to board
+    _uiState.update { state ->
+      val freeSlotIdx = state.slots.indexOfFirst { it.unlocked && it.occupantVehicleId == null }
+      val lotVehicles = state.vehicles.filter { it.stage == VehicleStage.IN_LOT }
+      val ringColors =
+        state.passengers
+          .asSequence()
+          .filter { it.segment == ConveyorSegment.RING }
+          .map { it.color }
+          .toSet()
+      val trackColors = state.passengers.asSequence().map { it.color }.toSet()
+
+      val chosenBus =
+        if (freeSlotIdx >= 0) {
+          lotVehicles.firstOrNull { v ->
+            v.color in ringColors && CollisionEngine.checkPath(v, lotVehicles, state.gridCols, state.gridRows).isClear
+          }
+            ?: lotVehicles.firstOrNull { v ->
+              v.color in trackColors && CollisionEngine.checkPath(v, lotVehicles, state.gridCols, state.gridRows).isClear
+            }
+            ?: lotVehicles.firstOrNull { it.color in ringColors }
+        } else {
+          null
+        }
+
+      if (freeSlotIdx >= 0 && chosenBus != null) {
+        val updatedSlots =
+          state.slots.mapIndexed { idx, s ->
+            if (idx == freeSlotIdx) s.copy(occupantVehicleId = chosenBus.id) else s
+          }
+        val updatedVehicles =
+          state.vehicles.map { v ->
+            if (v.id == chosenBus.id) {
+              v.copy(
+                stage = VehicleStage.DRIVING_TO_SLOT,
+                slotIndex = freeSlotIdx,
+                startX = v.x,
+                startY = v.y,
+                targetX = v.x,
+                targetY = v.y,
+                animProgress = 0f,
+              )
+            } else {
+              v
+            }
+          }
+        state.copy(
+          vehicles = updatedVehicles,
+          slots = updatedSlots,
+          boardBoosters = state.boardBoosters.coerceAtLeast(1),
+          showBoardBoosterHand = true,
+        )
+      } else {
+        state.copy(
+          boardBoosters = state.boardBoosters.coerceAtLeast(1),
+          showBoardBoosterHand = true,
+        )
+      }
+    }
   }
 
   fun toggleHelp(show: Boolean) {
@@ -1493,40 +1840,168 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch { prefsRepo.setLanguageLabel(next) }
   }
 
+  fun setPassengerSizeScale(scale: Float) {
+    val clamped = scale.coerceIn(0.65f, 1.50f)
+    laneGeometry = LaneGeometry(laneGeometry.widthDp, laneGeometry.heightDp, clamped, laneGeometry.trackShape)
+    _uiState.update { it.copy(passengerSizeScale = clamped) }
+    viewModelScope.launch { prefsRepo.setPassengerSizeScale(clamped) }
+  }
+
+  fun setPassengerHeadScale(scale: Float) {
+    val clamped = scale.coerceIn(0.65f, 1.65f)
+    _uiState.update { it.copy(passengerHeadScale = clamped) }
+    viewModelScope.launch { prefsRepo.setPassengerHeadScale(clamped) }
+  }
+
+  fun setPassengerWidthScale(scale: Float) {
+    val clamped = scale.coerceIn(0.65f, 1.65f)
+    _uiState.update { it.copy(passengerWidthScale = clamped) }
+    viewModelScope.launch { prefsRepo.setPassengerWidthScale(clamped) }
+  }
+
+  fun setPassengerHeightScale(scale: Float) {
+    val clamped = scale.coerceIn(0.65f, 1.65f)
+    _uiState.update { it.copy(passengerHeightScale = clamped) }
+    viewModelScope.launch { prefsRepo.setPassengerHeightScale(clamped) }
+  }
+
+  fun resetPassengerTuning() {
+    laneGeometry = LaneGeometry(laneGeometry.widthDp, laneGeometry.heightDp, 1.0f, laneGeometry.trackShape)
+    _uiState.update {
+      it.copy(
+        passengerSizeScale = 1.0f,
+        passengerHeadScale = 1.0f,
+        passengerWidthScale = 1.0f,
+        passengerHeightScale = 1.0f,
+      )
+    }
+    viewModelScope.launch { prefsRepo.resetPassengerTuning() }
+  }
+
   fun claimStarterPack() {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.claimStarterPack() }
     _uiState.update { it.copy(shopNotice = "Starter Pack claimed! +1000 coins & x2 boosters") }
   }
 
   fun unlockNoAds() {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.unlockNoAds() }
     _uiState.update { it.copy(shopNotice = "No Ads activated!") }
   }
 
   fun claimNoAdsPack() {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.claimNoAdsPack() }
     _uiState.update { it.copy(shopNotice = "No Ads Pack claimed! +1000 coins & x1 boosters") }
   }
 
   fun claimSmallPack() {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.claimSmallPack() }
     _uiState.update { it.copy(shopNotice = "Small Pack added! +5000 coins & x1 boosters") }
   }
 
   fun addBonusCoins(amount: Int) {
+    soundEngine.playClick()
     soundEngine.playUnlock()
     viewModelScope.launch { prefsRepo.adjustCoins(amount) }
     _uiState.update { it.copy(shopNotice = "+$amount coins added!") }
   }
 
   private fun slotNormalizedX(slotIndex: Int, @Suppress("UNUSED_PARAMETER") totalSlots: Int): Float {
-    val centers = floatArrayOf(0.1444f, 0.2403f, 0.3375f, 0.4347f, 0.5324f, 0.6338f, 0.7324f, 0.8306f)
+    val centers = floatArrayOf(0.1280f, 0.2370f, 0.3360f, 0.4350f, 0.5340f, 0.6340f, 0.7360f, 0.8400f)
     return if (slotIndex in centers.indices) centers[slotIndex]
-    else (0.1444f + slotIndex * 0.0980f).coerceIn(0.08f, 0.92f)
+    else (0.1280f + slotIndex * 0.1010f).coerceIn(0.08f, 0.92f)
+  }
+
+  private fun isoGridToPlayfieldNorm(
+    gx: Float,
+    gy: Float,
+    gridCols: Int,
+    gridRows: Int,
+    isOrthographicLot: Boolean = false,
+  ): Pair<Float, Float> {
+    val w = laneGeometry.widthDp.coerceAtLeast(320f)
+    val h = laneGeometry.heightDp.coerceAtLeast(600f)
+    val lotTop = h * 0.452f
+    val lotH = h * 0.455f
+    val du = gx - gridCols * 0.5f
+    val dv = gy - gridRows * 0.5f
+    if (isOrthographicLot) {
+      val spanX = gridCols.toFloat().coerceAtLeast(4f)
+      val spanY = gridRows.toFloat().coerceAtLeast(4f)
+      val cellByW = (w * 0.80f) / spanX
+      val cellByH = (lotH * 0.84f) / spanY
+      val cellDp = min(cellByW, cellByH).coerceIn(14f, 44f)
+      val centerX = w * 0.495f
+      val centerY = lotTop + lotH * 0.515f
+      val sx = centerX + du * cellDp
+      val sy = centerY + dv * cellDp
+      return (sx / w).coerceIn(0.04f, 0.96f) to (sy / h).coerceIn(0.42f, 0.94f)
+    }
+    val spanX = (gridCols * IsoProjection.UX + gridRows * IsoProjection.VX).coerceAtLeast(3.5f)
+    val spanY = (gridCols * abs(IsoProjection.UY) + gridRows * IsoProjection.VY).coerceAtLeast(3.5f)
+    val cellByW = (w * 0.88f) / spanX
+    val cellByH = (lotH * 0.90f) / spanY
+    val cellDp = min(cellByW, cellByH).coerceIn(18f, 44f)
+    val centerX = w * 0.49f
+    val centerY = lotTop + lotH * 0.49f
+    val sx = centerX + (du * IsoProjection.UX + dv * IsoProjection.VX) * cellDp
+    val sy = centerY + (du * IsoProjection.UY + dv * IsoProjection.VY) * cellDp
+    return (sx / w).coerceIn(0.04f, 0.96f) to (sy / h).coerceIn(0.42f, 0.94f)
+  }
+
+  private fun spawnCollisionEffects(
+    list: MutableList<Particle>,
+    nx: Float,
+    ny: Float,
+  ) {
+    // 1. Billowing cartoon smoke puffs right at the bumper collision point
+    repeat(6) { i ->
+      val angle = (i.toFloat() / 6f) * (2f * PI.toFloat()) + Random.nextFloat() * 0.5f
+      val speed = 0.04f + Random.nextFloat() * 0.06f
+      val puffLife = 0.52f + Random.nextFloat() * 0.16f
+      list.add(
+        Particle(
+          id = nextEntityId++,
+          x = nx + (Random.nextFloat() - 0.5f) * 0.025f,
+          y = ny + (Random.nextFloat() - 0.5f) * 0.015f,
+          vx = cos(angle) * speed,
+          vy = sin(angle) * speed * 0.6f - 0.06f,
+          color = if (i % 2 == 0) Color(0xFFF3F6FA) else Color(0xFFD0DBE8),
+          sizeDp = 22f + Random.nextFloat() * 10f,
+          life = puffLife,
+          maxLife = puffLife,
+          isSmokePuff = true,
+        )
+      )
+    }
+    // 2. Crisp impact sparks radiating outward on contact
+    val sparkColors = listOf(Color(0xFFFFE042), Color(0xFFFF8C1A), Color.White)
+    repeat(8) { i ->
+      val angle = (i.toFloat() / 8f) * (2f * PI.toFloat()) + Random.nextFloat() * 0.35f
+      val speed = 0.16f + Random.nextFloat() * 0.18f
+      val sparkLife = 0.28f + Random.nextFloat() * 0.10f
+      list.add(
+        Particle(
+          id = nextEntityId++,
+          x = nx,
+          y = ny,
+          vx = cos(angle) * speed,
+          vy = sin(angle) * speed - 0.06f,
+          color = sparkColors[i % sparkColors.size],
+          sizeDp = 5.5f + Random.nextFloat() * 3f,
+          life = sparkLife,
+          maxLife = sparkLife,
+          isSpark = true,
+        )
+      )
+    }
   }
 
   private fun spawnSmokeCloud(

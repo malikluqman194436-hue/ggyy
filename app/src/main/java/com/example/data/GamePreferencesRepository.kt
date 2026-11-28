@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,6 +26,10 @@ data class PlayerProgress(
   val languageLabel: String = "English",
   val noAdsUnlocked: Boolean = false,
   val starterPackClaimed: Boolean = false,
+  val passengerSizeScale: Float = 1.0f,
+  val passengerHeadScale: Float = 1.0f,
+  val passengerWidthScale: Float = 1.0f,
+  val passengerHeightScale: Float = 1.0f,
 )
 
 class GamePreferencesRepository(private val context: Context) {
@@ -41,6 +46,10 @@ class GamePreferencesRepository(private val context: Context) {
     val LANGUAGE_LABEL = stringPreferencesKey("language_label")
     val NO_ADS_UNLOCKED = booleanPreferencesKey("no_ads_unlocked")
     val STARTER_PACK_CLAIMED = booleanPreferencesKey("starter_pack_claimed")
+    val PASSENGER_SIZE_SCALE = floatPreferencesKey("passenger_size_scale")
+    val PASSENGER_HEAD_SCALE = floatPreferencesKey("passenger_head_scale")
+    val PASSENGER_WIDTH_SCALE = floatPreferencesKey("passenger_width_scale")
+    val PASSENGER_HEIGHT_SCALE = floatPreferencesKey("passenger_height_scale")
   }
 
   val progressFlow: Flow<PlayerProgress> =
@@ -57,6 +66,10 @@ class GamePreferencesRepository(private val context: Context) {
         languageLabel = prefs[Keys.LANGUAGE_LABEL] ?: "English",
         noAdsUnlocked = prefs[Keys.NO_ADS_UNLOCKED] ?: false,
         starterPackClaimed = prefs[Keys.STARTER_PACK_CLAIMED] ?: false,
+        passengerSizeScale = (prefs[Keys.PASSENGER_SIZE_SCALE] ?: 1.0f).coerceIn(0.65f, 1.50f),
+        passengerHeadScale = (prefs[Keys.PASSENGER_HEAD_SCALE] ?: 1.0f).coerceIn(0.65f, 1.65f),
+        passengerWidthScale = (prefs[Keys.PASSENGER_WIDTH_SCALE] ?: 1.0f).coerceIn(0.65f, 1.65f),
+        passengerHeightScale = (prefs[Keys.PASSENGER_HEIGHT_SCALE] ?: 1.0f).coerceIn(0.65f, 1.65f),
       )
     }
 
@@ -97,6 +110,31 @@ class GamePreferencesRepository(private val context: Context) {
 
   suspend fun setLanguageLabel(label: String) {
     context.gameDataStore.edit { it[Keys.LANGUAGE_LABEL] = label }
+  }
+
+  suspend fun setPassengerSizeScale(scale: Float) {
+    context.gameDataStore.edit { it[Keys.PASSENGER_SIZE_SCALE] = scale.coerceIn(0.65f, 1.50f) }
+  }
+
+  suspend fun setPassengerHeadScale(scale: Float) {
+    context.gameDataStore.edit { it[Keys.PASSENGER_HEAD_SCALE] = scale.coerceIn(0.65f, 1.65f) }
+  }
+
+  suspend fun setPassengerWidthScale(scale: Float) {
+    context.gameDataStore.edit { it[Keys.PASSENGER_WIDTH_SCALE] = scale.coerceIn(0.65f, 1.65f) }
+  }
+
+  suspend fun setPassengerHeightScale(scale: Float) {
+    context.gameDataStore.edit { it[Keys.PASSENGER_HEIGHT_SCALE] = scale.coerceIn(0.65f, 1.65f) }
+  }
+
+  suspend fun resetPassengerTuning() {
+    context.gameDataStore.edit {
+      it[Keys.PASSENGER_SIZE_SCALE] = 1.0f
+      it[Keys.PASSENGER_HEAD_SCALE] = 1.0f
+      it[Keys.PASSENGER_WIDTH_SCALE] = 1.0f
+      it[Keys.PASSENGER_HEIGHT_SCALE] = 1.0f
+    }
   }
 
   suspend fun claimStarterPack() {

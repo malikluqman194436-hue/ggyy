@@ -9,6 +9,11 @@ enum class ConveyorSegment {
   RING,
 }
 
+enum class TrackLoopShape {
+  LEVEL1_OVAL,
+  LEVEL2_ROUNDED_OVAL,
+}
+
 data class LaneSample(
   val x: Float,
   val y: Float,
@@ -33,15 +38,35 @@ private data class ArcPoint(
 class LaneGeometry(
   val widthDp: Float,
   val heightDp: Float,
+  val passengerSizeScale: Float = 1.0f,
+  val trackShape: TrackLoopShape = TrackLoopShape.LEVEL1_OVAL,
 ) {
-  // Sized so 4 plump chibi passengers sit comfortably across the wider 135px HD oval loop & arms
-  val safeHalfRoadWidthDp: Float = minOf(widthDp * 0.0660f, heightDp * 0.0280f).coerceAtLeast(22.5f)
-  private val outerRimMarginDp: Float = (0.85f / 360f) * widthDp
-  val colStepDp: Float = (safeHalfRoadWidthDp - outerRimMarginDp) / 1.94f
+  private val sizeScale: Float = passengerSizeScale.coerceIn(0.65f, 1.50f)
+  private val spriteScaleBase: Float = minOf(widthDp / 360f, heightDp / 800f).coerceAtLeast(0.75f)
+  // Plump upright chibi proportions uniform across all 4 lanes
+  val passengerSpriteWidthDp: Float =
+    (if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) 14.0f else 14.2f) * spriteScaleBase * sizeScale
+  val passengerSpriteHeightDp: Float =
+    if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) {
+      passengerSpriteWidthDp * (216f / 180f) * 0.85f
+    } else {
+      passengerSpriteWidthDp * (216f / 180f) * 0.90f
+    }
+  val safeHalfRoadWidthDp: Float =
+    if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) {
+      minOf(widthDp * 0.0560f, heightDp * 0.0184f).coerceAtLeast(14.5f)
+    } else {
+      minOf(widthDp * 0.044f, heightDp * 0.0195f).coerceAtLeast(15.2f)
+    }
+  val colStepDp: Float =
+    (if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) 4.65f else 8.2f) *
+      (0.45f + 0.55f * sizeScale) *
+      spriteScaleBase
   val passengerSlotWidthDp: Float = colStepDp
-  val passengerWidthDp: Float = colStepDp * 1.16f
-  val rowSpacingDp: Float = colStepDp * 0.96f
-  val armHoldStopOffsetDp: Float = safeHalfRoadWidthDp * 1.40f + rowSpacingDp * 0.45f
+  val passengerWidthDp: Float = passengerSpriteWidthDp * 0.78f
+  val rowSpacingDp: Float
+  val armHoldStopOffsetDp: Float =
+    (if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) 26.0f else 25.0f) * (widthDp / 360f)
 
   private val ringPoints: List<ArcPoint>
   private val leftArmPoints: List<ArcPoint>
@@ -50,7 +75,7 @@ class LaneGeometry(
   val ringLenDp: Float
   val leftArmLenDp: Float
   val rightArmLenDp: Float
-  val leftEntryRingDistDp: Float = 0f
+  val leftEntryRingDistDp: Float
   val rightEntryRingDistDp: Float
   val boardingGateCenterDp: Float
   val boardingGateHalfWindowDp: Float
@@ -58,56 +83,161 @@ class LaneGeometry(
   val boardingEndDp: Float
 
   init {
-    // Control points matched directly to game_oval_road_loop_v3 at 0.319f height (cx=0.500, cy=0.2058, rx=0.233, ry=0.0781)
-    // Ordered CLOCKWISE (9h -> 12h -> 3h -> 6h boarding gate -> 9h) matching the rotating belt
-    val ringControl = listOf(
-      pt(0.2670f, 0.2058f), // 0: left junction (9 o'clock)
-      pt(0.2982f, 0.1667f), // 1: top-left curve (10 o'clock)
-      pt(0.3835f, 0.1381f), // 2: top-left arch (11 o'clock)
-      pt(0.5000f, 0.1277f), // 3: top-center (12 o'clock)
-      pt(0.6165f, 0.1381f), // 4: top-right arch (1 o'clock)
-      pt(0.7018f, 0.1667f), // 5: top-right curve (2 o'clock)
-      pt(0.7330f, 0.2058f), // 6: right junction (3 o'clock)
-      pt(0.7018f, 0.2449f), // 7: bottom-right curve (4 o'clock)
-      pt(0.6165f, 0.2735f), // 8: bottom-right exit arch (5 o'clock)
-      pt(0.5000f, 0.2839f), // 9: bottom-center boarding gate (6 o'clock)
-      pt(0.3835f, 0.2735f), // 10: bottom-left approach arch (7 o'clock)
-      pt(0.2982f, 0.2449f), // 11: bottom-left curve (8 o'clock)
-    )
-    ringPoints = buildClosedCatmullRom(ringControl, stepsPerSeg = 22)
-    ringLenDp = ringPoints.last().dist
+    if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) {
+      // Exact rounded-oval center track extracted from game_rounded_road_loop_level2.png (CLOCKWISE)
+      val ringControl = listOf(
+        pt(0.2165f, 0.2350f), // 0: 9 o'clock left curve mid
+        pt(0.2470f, 0.2042f), // 1: top-left corner
+        pt(0.3100f, 0.1930f), // 2: top-left lead-in
+        pt(0.4100f, 0.1876f), // 3: top straight left
+        pt(0.5000f, 0.1868f), // 4: top center
+        pt(0.5900f, 0.1876f), // 5: top straight right
+        pt(0.6900f, 0.1930f), // 6: top-right lead-out
+        pt(0.7530f, 0.2042f), // 7: top-right corner
+        pt(0.7835f, 0.2350f), // 8: 3 o'clock right curve mid
+        pt(0.7530f, 0.2645f), // 9: bottom-right corner
+        pt(0.6900f, 0.2762f), // 10: bottom-right lead-in
+        pt(0.5900f, 0.2816f), // 11: bottom straight right
+        pt(0.5000f, 0.2822f), // 12: bottom center (boarding gate)
+        pt(0.4100f, 0.2816f), // 13: bottom straight left
+        pt(0.3100f, 0.2762f), // 14: bottom-left lead-out
+        pt(0.2470f, 0.2645f), // 15: bottom-left corner
+      )
+      val stepsPerSeg = 16
+      ringPoints = buildClosedCatmullRom(ringControl, stepsPerSeg = stepsPerSeg)
+      ringLenDp = ringPoints.last().dist
+      rowSpacingDp = maxOf(10.0f * spriteScaleBase, ringLenDp / 46f)
 
-    // Find arc distances at key ring landmarks
-    rightEntryRingDistDp = ringPoints[6 * 22].dist
-    boardingGateCenterDp = ringPoints[9 * 22].dist
-    // Boarding gate covers a clean row-capture window at bottom center so full 4-wide rows board together
-    boardingGateHalfWindowDp = rowSpacingDp * 0.80f
-    boardingStartDp = wrapRing(boardingGateCenterDp - boardingGateHalfWindowDp)
-    boardingEndDp = wrapRing(boardingGateCenterDp + boardingGateHalfWindowDp)
+      val leftEntryIdx = 5
+      val rightEntryIdx = 7 * stepsPerSeg + 11
+      leftEntryRingDistDp = ringPoints[leftEntryIdx].dist
+      rightEntryRingDistDp = ringPoints[rightEntryIdx].dist
+      boardingGateCenterDp = ringPoints[12 * stepsPerSeg].dist
+      boardingGateHalfWindowDp = maxOf(rowSpacingDp * 1.05f, 11.5f * spriteScaleBase)
+      boardingStartDp = wrapRing(boardingGateCenterDp - boardingGateHalfWindowDp)
+      boardingEndDp = wrapRing(boardingGateCenterDp + boardingGateHalfWindowDp)
 
-    val leftArmControl = listOf(
-      pt(-0.0450f, -0.0383f),
-      pt(-0.0350f,  0.0287f),
-      pt(-0.0120f,  0.0910f),
-      pt( 0.0240f,  0.1380f),
-      pt( 0.0820f,  0.1705f),
-      pt( 0.1500f,  0.1839f),
-      pt( 0.2670f,  0.2058f),
-    )
-    leftArmPoints = buildOpenCatmullRom(leftArmControl, stepsPerSeg = 20)
-    leftArmLenDp = leftArmPoints.last().dist
+      val leftJoinPt = ringPoints[leftEntryIdx]
+      val leftJoinLookAhead = ringPoints[(leftEntryIdx + 6).coerceAtMost(ringPoints.lastIndex)]
+      val leftArmControl = listOf(
+        pt( 0.010f, 0.000f),
+        pt(-0.005f, 0.065f),
+        pt(-0.015f, 0.125f),
+        pt( 0.008f, 0.166f),
+        pt( 0.040f, 0.1825f),
+        pt( 0.080f, 0.1950f),
+        pt( 0.120f, 0.2050f),
+        pt( 0.160f, 0.2140f),
+        pt( 0.192f, 0.2200f),
+        leftJoinPt.x to leftJoinPt.y,
+      )
+      leftArmPoints =
+        buildOpenCatmullRom(
+          control = leftArmControl,
+          stepsPerSeg = 20,
+          endLookAhead = leftJoinLookAhead.x to leftJoinLookAhead.y,
+        )
+      leftArmLenDp = leftArmPoints.last().dist
 
-    val rightArmControl = listOf(
-      pt(1.0450f, -0.0383f),
-      pt(1.0350f,  0.0287f),
-      pt(1.0120f,  0.0910f),
-      pt(0.9760f,  0.1380f),
-      pt(0.9180f,  0.1705f),
-      pt(0.8500f,  0.1839f),
-      pt(0.7330f,  0.2058f),
-    )
-    rightArmPoints = buildOpenCatmullRom(rightArmControl, stepsPerSeg = 20)
-    rightArmLenDp = rightArmPoints.last().dist
+      val rightJoinPt = ringPoints[rightEntryIdx]
+      val rightJoinLookAhead = ringPoints[(rightEntryIdx + 6).coerceAtMost(ringPoints.lastIndex)]
+      val rightArmControl = listOf(
+        pt(0.990f, 0.000f),
+        pt(1.005f, 0.065f),
+        pt(1.015f, 0.125f),
+        pt(0.992f, 0.166f),
+        pt(0.960f, 0.1825f),
+        pt(0.920f, 0.1950f),
+        pt(0.880f, 0.2050f),
+        pt(0.840f, 0.2140f),
+        pt(0.808f, 0.2200f),
+        rightJoinPt.x to rightJoinPt.y,
+      )
+      rightArmPoints =
+        buildOpenCatmullRom(
+          control = rightArmControl,
+          stepsPerSeg = 20,
+          endLookAhead = rightJoinLookAhead.x to rightJoinLookAhead.y,
+        )
+      rightArmLenDp = rightArmPoints.last().dist
+    } else {
+      // Balanced ~45-row spacing around Level 1 oval ring
+      rowSpacingDp = 10.2f * spriteScaleBase
+
+      // Control points measured directly from game_oval_road_loop_v3.png asphalt centerlines
+      // Ordered CLOCKWISE (9h -> 12h -> 3h -> 6h boarding gate -> 9h)
+      val ringControl = listOf(
+        pt(0.2680f, 0.2041f), // 0: left junction (9 o'clock)
+        pt(0.3222f, 0.1520f), // 1: top-left curve (10 o'clock)
+        pt(0.4153f, 0.1297f), // 2: top-left arch (11 o'clock)
+        pt(0.5000f, 0.1243f), // 3: top-center (12 o'clock)
+        pt(0.5847f, 0.1297f), // 4: top-right arch (1 o'clock)
+        pt(0.6773f, 0.1520f), // 5: top-right curve (2 o'clock)
+        pt(0.7320f, 0.2041f), // 6: right junction (3 o'clock)
+        pt(0.6792f, 0.2564f), // 7: bottom-right curve (4 o'clock)
+        pt(0.5838f, 0.2780f), // 8: bottom-right exit arch (5 o'clock)
+        pt(0.5000f, 0.2831f), // 9: bottom-center boarding gate (6 o'clock)
+        pt(0.4162f, 0.2780f), // 10: bottom-left approach arch (7 o'clock)
+        pt(0.3204f, 0.2566f), // 11: bottom-left curve (8 o'clock)
+      )
+      ringPoints = buildClosedCatmullRom(ringControl, stepsPerSeg = 22)
+      ringLenDp = ringPoints.last().dist
+
+      // Find arc distances at key ring landmarks
+      val entryArcOffsetSteps = 8
+      leftEntryRingDistDp = ringPoints[entryArcOffsetSteps].dist
+      rightEntryRingDistDp = ringPoints[6 * 22 + entryArcOffsetSteps].dist
+      boardingGateCenterDp = ringPoints[9 * 22].dist
+      // Boarding gate covers a clean row-capture window at bottom center so matching rows board crisply
+      boardingGateHalfWindowDp = rowSpacingDp * 0.95f
+      boardingStartDp = wrapRing(boardingGateCenterDp - boardingGateHalfWindowDp)
+      boardingEndDp = wrapRing(boardingGateCenterDp + boardingGateHalfWindowDp)
+
+      val leftJoinPt = ringPoints[entryArcOffsetSteps]
+      val leftJoinLookAhead = ringPoints[(entryArcOffsetSteps + 6).coerceAtMost(ringPoints.lastIndex)]
+      val leftArmControl = listOf(
+        pt(-0.0400f, 0.0060f),
+        pt(-0.0330f, 0.0380f),
+        pt(-0.0170f, 0.0780f),
+        pt( 0.0080f, 0.1160f),
+        pt( 0.0460f, 0.1500f),
+        pt( 0.0960f, 0.1730f),
+        pt( 0.1540f, 0.1855f),
+        pt( 0.2120f, 0.1920f),
+        pt( 0.2540f, 0.1925f),
+        leftJoinPt.x to leftJoinPt.y,
+      )
+      leftArmPoints =
+        buildOpenCatmullRom(
+          control = leftArmControl,
+          stepsPerSeg = 20,
+          endLookAhead = leftJoinLookAhead.x to leftJoinLookAhead.y,
+        )
+      leftArmLenDp = leftArmPoints.last().dist
+
+      val rightJoinIndex = 6 * 22 + entryArcOffsetSteps
+      val rightJoinPt = ringPoints[rightJoinIndex]
+      val rightJoinLookAhead = ringPoints[(rightJoinIndex + 6).coerceAtMost(ringPoints.lastIndex)]
+      val rightArmControl = listOf(
+        pt(1.0400f, 0.0060f),
+        pt(1.0330f, 0.0380f),
+        pt(1.0170f, 0.0780f),
+        pt(0.9920f, 0.1160f),
+        pt(0.9540f, 0.1500f),
+        pt(0.9040f, 0.1730f),
+        pt(0.8460f, 0.1855f),
+        pt(0.7880f, 0.1920f),
+        pt(0.7460f, 0.1925f),
+        rightJoinPt.x to rightJoinPt.y,
+      )
+      rightArmPoints =
+        buildOpenCatmullRom(
+          control = rightArmControl,
+          stepsPerSeg = 20,
+          endLookAhead = rightJoinLookAhead.x to rightJoinLookAhead.y,
+        )
+      rightArmLenDp = rightArmPoints.last().dist
+    }
   }
 
   private fun pt(nx: Float, ny: Float): Pair<Float, Float> = (nx * widthDp) to (ny * heightDp)
@@ -145,58 +275,102 @@ class LaneGeometry(
   }
 
   /**
-   * Perspective scale matching the oval loop & feeder arms of the 1080x2402 HD game_play_bg:
-   * - Top arch: 0.98x so 4 plump chibis stand cleanly along the upper arch
-   * - Bottom arch: 1.06x along the foreground boarding curve
-   * - Feeder arms: 0.90x near upper corners growing smoothly to 1.04x into the ring junction
-   * - Wide side curves (9 & 3 o'clock): smoothly grows to 1.16x across the wide horizontal curb
+   * Strictly uniform 1:1 passenger scale across every row and column around the entire loop.
    */
-  fun passengerScale(segment: ConveyorSegment, distDp: Float): Float {
-    val s = sample(segment, distDp)
-    val nx = (s.x / widthDp).coerceIn(0f, 1f)
-    val ny = (s.y / heightDp).coerceIn(0f, 0.40f)
-    if (segment != ConveyorSegment.RING) {
-      val armBlend = ((ny - 0.03f) / 0.18f).coerceIn(0f, 1f)
-      return 0.92f + 0.12f * armBlend
-    }
-    val sideFactor = (abs(nx - 0.500f) / 0.2500f).coerceIn(0f, 1f)
-    val archFactor = if (ny > 0.2200f) 1.08f else 1.00f
-    return archFactor + (1.16f - archFactor) * (sideFactor * sideFactor)
-  }
+  fun passengerScale(
+    @Suppress("UNUSED_PARAMETER") segment: ConveyorSegment,
+    @Suppress("UNUSED_PARAMETER") distDp: Float,
+  ): Float = 1.0f
 
-  private fun columnSpreadScale(segment: ConveyorSegment, distDp: Float): Float {
-    val s = sample(segment, distDp)
-    val nx = (s.x / widthDp).coerceIn(0f, 1f)
-    val ny = (s.y / heightDp).coerceIn(0f, 0.40f)
-    if (segment != ConveyorSegment.RING) {
-      val armBlend = ((ny - 0.03f) / 0.18f).coerceIn(0f, 1f)
-      return 0.80f + 0.12f * armBlend
+  private fun localAsphaltHalfWidthDp(segment: ConveyorSegment, s: LaneSample, distDp: Float = 0f): Float {
+    if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) {
+      val ringVerticalHalf = 0.0184f * heightDp
+      val ringHorizontalHalf = 0.0560f * widthDp
+      if (segment == ConveyorSegment.RING) {
+        return s.nx * s.nx * ringHorizontalHalf + s.ny * s.ny * ringVerticalHalf
+      }
+      val armLen = if (segment == ConveyorSegment.LEFT_ARM) leftArmLenDp else rightArmLenDp
+      val blendStart = (armLen - armHoldStopOffsetDp).coerceAtLeast(0f)
+      val joinBlend =
+        if (distDp > blendStart && armHoldStopOffsetDp > 0.01f) {
+          ((distDp - blendStart) / armHoldStopOffsetDp).coerceIn(0f, 1f)
+        } else {
+          0f
+        }
+      val armVerticalHalf = 0.0176f * heightDp
+      val armHorizontalHalf = 0.0500f * widthDp
+      val verticalHalf = armVerticalHalf + (ringVerticalHalf - armVerticalHalf) * joinBlend
+      val horizontalHalf = armHorizontalHalf + (ringHorizontalHalf - armHorizontalHalf) * joinBlend
+      return s.nx * s.nx * horizontalHalf + s.ny * s.ny * verticalHalf
     }
-    val sideFactor = (abs(nx - 0.500f) / 0.2500f).coerceIn(0f, 1f)
-    val archFactor = if (ny > 0.2200f) 0.96f else 0.90f
-    return archFactor + (1.04f - archFactor) * (sideFactor * sideFactor)
+    val ringVerticalHalf = if (s.y < 0.2041f * heightDp) 0.0196f * heightDp else 0.0190f * heightDp
+    val ringHorizontalHalf = 0.0585f * widthDp
+    if (segment == ConveyorSegment.RING) {
+      return s.nx * s.nx * ringHorizontalHalf + s.ny * s.ny * ringVerticalHalf
+    }
+    val armLen = if (segment == ConveyorSegment.LEFT_ARM) leftArmLenDp else rightArmLenDp
+    val blendStart = (armLen - armHoldStopOffsetDp).coerceAtLeast(0f)
+    val joinBlend =
+      if (distDp > blendStart && armHoldStopOffsetDp > 0.01f) {
+        ((distDp - blendStart) / armHoldStopOffsetDp).coerceIn(0f, 1f)
+      } else {
+        0f
+      }
+    val armVerticalHalf = 0.0168f * heightDp
+    val armHorizontalHalf = 0.0440f * widthDp
+    val verticalHalf = armVerticalHalf + (ringVerticalHalf - armVerticalHalf) * joinBlend
+    val horizontalHalf = armHorizontalHalf + (ringHorizontalHalf - armHorizontalHalf) * joinBlend
+    return s.nx * s.nx * horizontalHalf + s.ny * s.ny * verticalHalf
   }
 
   fun localSafeHalfRoadWidthDp(segment: ConveyorSegment, distDp: Float): Float {
-    val scale = passengerScale(segment, distDp)
-    return safeHalfRoadWidthDp * scale.coerceAtLeast(1.0f)
+    return localAsphaltHalfWidthDp(segment, sample(segment, distDp), distDp)
   }
 
   fun sample(segment: ConveyorSegment, distDp: Float): LaneSample {
     return when (segment) {
       ConveyorSegment.RING -> samplePolyline(ringPoints, wrapRing(distDp), closed = true)
-      ConveyorSegment.LEFT_ARM -> sampleOpenArm(leftArmPoints, distDp)
-      ConveyorSegment.RIGHT_ARM -> sampleOpenArm(rightArmPoints, distDp)
+      ConveyorSegment.LEFT_ARM -> sampleArmWithJoinBlend(leftArmPoints, distDp, leftEntryRingDistDp)
+      ConveyorSegment.RIGHT_ARM -> sampleArmWithJoinBlend(rightArmPoints, distDp, rightEntryRingDistDp)
     }
   }
 
-  fun passengerCoords(segment: ConveyorSegment, distDp: Float, colInRow: Int): Pair<LaneSample, Pair<Float, Float>> {
+  fun passengerCoords(
+    segment: ConveyorSegment,
+    distDp: Float,
+    colInRow: Int,
+    widthScale: Float = 1.0f,
+    heightScale: Float = 1.0f,
+  ): Pair<LaneSample, Pair<Float, Float>> {
     val s = sample(segment, distDp)
-    val scale = passengerScale(segment, distDp)
-    val spreadScale = columnSpreadScale(segment, distDp)
-    val localHalf = localSafeHalfRoadWidthDp(segment, distDp)
-    val maxOffset = (localHalf - outerRimMarginDp - passengerWidthDp * scale * 0.38f).coerceAtLeast(1f)
-    val offset = ((colInRow - 1.5f) * colStepDp * spreadScale).coerceIn(-maxOffset, maxOffset)
+    val localHalf = localAsphaltHalfWidthDp(segment, s, distDp)
+    val effectiveWidthScale = widthScale.coerceIn(0.65f, 1.65f)
+    val effectiveHeightScale = heightScale.coerceIn(0.65f, 1.65f)
+
+    if (trackShape == TrackLoopShape.LEVEL2_ROUNDED_OVAL) {
+      // Visual-center anchored full-figure chibi kept strictly inside the dark asphalt away from white curbs
+      val effectiveW = passengerSpriteWidthDp * effectiveWidthScale
+      val effectiveH = passengerSpriteHeightDp * effectiveHeightScale
+      val ellipseProj = hypot(effectiveW * 0.36f * abs(s.nx), effectiveH * 0.51f * abs(s.ny))
+      val boxProj = effectiveW * 0.34f * abs(s.nx) + effectiveH * 0.49f * abs(s.ny)
+      val bodyHalfAlongNormal = maxOf(ellipseProj, boxProj * 0.90f)
+      val curbMargin = 0.9f * spriteScaleBase
+      val minColsSpan = 3.2f * spriteScaleBase
+      val maxOffset = (localHalf - curbMargin - bodyHalfAlongNormal).coerceAtLeast(minColsSpan)
+      val localColStep = minOf(colStepDp, maxOffset / 1.5f)
+      val offset = ((colInRow - 1.5f) * localColStep).coerceIn(-maxOffset, maxOffset)
+      return s to ((s.x + s.nx * offset) to (s.y + s.ny * offset))
+    }
+
+    // Foot-anchored footprint: keep all 4 passengers strictly inside the asphalt curb borders on both arms & turns
+    val footHalfW = passengerSpriteWidthDp * effectiveWidthScale * 0.44f
+    val footHalfH = passengerSpriteHeightDp * effectiveHeightScale * 0.16f
+    val footHalfAlongNormal = hypot(s.nx * footHalfW, s.ny * footHalfH)
+    val curbMargin = (1.60f + 0.90f * (1f - abs(s.ny))) * spriteScaleBase
+    val minColsSpan = 3.2f * spriteScaleBase
+    val maxOffset = (localHalf - curbMargin - footHalfAlongNormal).coerceAtLeast(minColsSpan)
+    val localColStep = minOf(colStepDp, maxOffset / 1.5f)
+    val offset = ((colInRow - 1.5f) * localColStep).coerceIn(-maxOffset, maxOffset)
     return s to ((s.x + s.nx * offset) to (s.y + s.ny * offset))
   }
 
@@ -249,6 +423,27 @@ class LaneGeometry(
       }
     }
     return result
+  }
+
+  private fun sampleArmWithJoinBlend(
+    pts: List<ArcPoint>,
+    distDp: Float,
+    entryRingDistDp: Float,
+  ): LaneSample {
+    val raw = sampleOpenArm(pts, distDp)
+    val armLen = pts.last().dist
+    val blendSpan = (armHoldStopOffsetDp * 0.55f).coerceAtLeast(1f)
+    val blendStart = (armLen - blendSpan).coerceAtLeast(0f)
+    if (distDp <= blendStart) return raw
+    val t = ((distDp - blendStart) / blendSpan).coerceIn(0f, 1f)
+    val smooth = t * t * (3f - 2f * t)
+    val ringEntry = samplePolyline(ringPoints, wrapRing(entryRingDistDp), closed = true)
+    val bx = raw.tx + (ringEntry.tx - raw.tx) * smooth
+    val by = raw.ty + (ringEntry.ty - raw.ty) * smooth
+    val bLen = hypot(bx, by).coerceAtLeast(0.0001f)
+    val tx = bx / bLen
+    val ty = by / bLen
+    return LaneSample(x = raw.x, y = raw.y, tx = tx, ty = ty, nx = -ty, ny = tx)
   }
 
   private fun sampleOpenArm(pts: List<ArcPoint>, distDp: Float): LaneSample {
@@ -312,14 +507,23 @@ class LaneGeometry(
     return toArcLength(raw)
   }
 
-  private fun buildOpenCatmullRom(control: List<Pair<Float, Float>>, stepsPerSeg: Int): List<ArcPoint> {
+  private fun buildOpenCatmullRom(
+    control: List<Pair<Float, Float>>,
+    stepsPerSeg: Int,
+    endLookAhead: Pair<Float, Float>? = null,
+  ): List<ArcPoint> {
     val n = control.size
     val raw = ArrayList<Pair<Float, Float>>((n - 1) * stepsPerSeg + 1)
     for (i in 0 until n - 1) {
       val p0 = if (i == 0) control[0] else control[i - 1]
       val p1 = control[i]
       val p2 = control[i + 1]
-      val p3 = if (i + 2 < n) control[i + 2] else control[n - 1]
+      val p3 =
+        when {
+          i + 2 < n -> control[i + 2]
+          endLookAhead != null -> endLookAhead
+          else -> control[n - 1]
+        }
       for (s in 0 until stepsPerSeg) {
         raw.add(catmullRom(p0, p1, p2, p3, s.toFloat() / stepsPerSeg))
       }

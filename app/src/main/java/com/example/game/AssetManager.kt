@@ -35,6 +35,8 @@ class AssetManager(context: Context) {
   private val androidAssets = context.applicationContext.assets
 
   private val busSprites = ConcurrentHashMap<Pair<VehicleColor, BusView>, ImageBitmap?>()
+  private val parkedBusSprites = ConcurrentHashMap<Pair<VehicleColor, Int>, ImageBitmap>()
+  private val orthoBusSprites = ConcurrentHashMap<String, ImageBitmap>()
   private val baseGreenBusBitmaps = ConcurrentHashMap<BusView, Pair<Bitmap, IntArray>>()
 
   private val exhaustPuffSheet: ImageBitmap?
@@ -127,8 +129,20 @@ class AssetManager(context: Context) {
 
   fun getPassengerSprite(color: VehicleColor): ImageBitmap? = passengerStrips[color]
 
-  fun getWaitingBayBusSprite(color: VehicleColor): ImageBitmap? {
-    return getBusSprite(color, BusView.TOP_REAR) ?: getBusSprite(color, BusView.TOP_FRONT)
+  fun getParkedBusSprite(color: VehicleColor, capacity: Int = 16): ImageBitmap {
+    val tier = IsoBusSpriteFactory.parkedBusTierForCapacity(capacity)
+    val key = color to tier
+    parkedBusSprites[key]?.let { return it }
+    synchronized(recolorLock) {
+      parkedBusSprites[key]?.let { return it }
+      val rendered = IsoBusSpriteFactory.renderParkedBus(color, capacity)
+      parkedBusSprites[key] = rendered
+      return rendered
+    }
+  }
+
+  fun getWaitingBayBusSprite(color: VehicleColor, capacity: Int = 16): ImageBitmap? {
+    return getParkedBusSprite(color, capacity)
   }
 
   fun getBusExitBlurSheet(color: VehicleColor): ImageBitmap? {
@@ -139,8 +153,8 @@ class AssetManager(context: Context) {
     return getBusSprite(color, BusView.ISO_2)
   }
 
-  fun getBusSunroofSheet(color: VehicleColor): ImageBitmap? {
-    return getWaitingBayBusSprite(color)
+  fun getBusSunroofSheet(color: VehicleColor, capacity: Int = 16): ImageBitmap? {
+    return getWaitingBayBusSprite(color, capacity)
   }
 
   fun getExhaustPuffSheet(): ImageBitmap? = exhaustPuffSheet
@@ -179,6 +193,32 @@ class AssetManager(context: Context) {
     return getBusSprite(color, preferred)
       ?: getBusSprite(color, BusView.ISO_2)
       ?: getBusSprite(color, BusView.TOP_REAR)
+  }
+
+  fun getOrthoBusSprite(
+    color: VehicleColor,
+    angleDeg: Float,
+    lengthInCells: Float,
+    widthInCells: Float = 0.84f,
+  ): ImageBitmap {
+    val normAngle = (((angleDeg % 360f) + 360f) % 360f)
+    val qAngle = ((normAngle / 5f).roundToInt() * 5) % 360
+    val qLen = (lengthInCells * 100f).roundToInt()
+    val qWid = (widthInCells * 100f).roundToInt()
+    val key = "${color.name}_${qAngle}_${qLen}_${qWid}"
+    orthoBusSprites[key]?.let { return it }
+    synchronized(recolorLock) {
+      orthoBusSprites[key]?.let { return it }
+      val rendered =
+        IsoBusSpriteFactory.renderOrthoBus(
+          busColor = color,
+          angleDeg = qAngle.toFloat(),
+          lengthInCells = qLen / 100f,
+          widthInCells = qWid / 100f,
+        )
+      orthoBusSprites[key] = rendered
+      return rendered
+    }
   }
 
   fun getArrowsStrip(): ImageBitmap? = arrowsStrip
@@ -298,21 +338,35 @@ internal fun recolorGreenWalkSheetPixels(srcPixels: IntArray, color: VehicleColo
     val spec = (minC + sheen * 0.22f).coerceIn(0f, 1f)
 
     val lum =
-      if (isWhite) {
-        if (maxC < 0.28f) {
-          maxC * 1.05f
-        } else {
-          val t = ((maxC - 0.28f) / 0.70f).coerceIn(0f, 1f)
-          0.32f + 0.66f * (1f - (1f - t) * (1f - t))
+      when {
+        isWhite -> {
+          if (maxC < 0.28f) {
+            maxC * 1.05f
+          } else {
+            val t = ((maxC - 0.28f) / 0.70f).coerceIn(0f, 1f)
+            0.32f + 0.66f * (1f - (1f - t) * (1f - t))
+          }
         }
+        color == VehicleColor.YELLOW -> {
+          // Lift mid-tone green luminance so yellow renders bright, vivid sunny gold instead of muddy olive
+          (0.28f + 0.72f * kotlin.math.sqrt(maxC.toDouble()).toFloat()).coerceIn(0f, 1f)
+        }
+        else -> maxC
+      }
+
+    val (effR, effG, effB) =
+      if (color == VehicleColor.YELLOW) {
+        // Warm golden shadow in darker areas, bright lemon-canary on sunlit top
+        val warmFactor = (1f - lum).coerceIn(0f, 1f)
+        Triple(1.00f, (0.93f - 0.14f * warmFactor).coerceIn(0.75f, 0.95f), 0.06f)
       } else {
-        maxC
+        Triple(tr, tg, tb)
       }
 
     val invSpec = 1f - spec
-    val outR = ((lum * tr) * invSpec + spec).coerceIn(0f, 1f)
-    val outG = ((lum * tg) * invSpec + spec).coerceIn(0f, 1f)
-    val outB = ((lum * tb) * invSpec + spec).coerceIn(0f, 1f)
+    val outR = ((lum * effR) * invSpec + spec).coerceIn(0f, 1f)
+    val outG = ((lum * effG) * invSpec + spec).coerceIn(0f, 1f)
+    val outB = ((lum * effB) * invSpec + spec).coerceIn(0f, 1f)
 
     out[i] =
       (a shl 24) or

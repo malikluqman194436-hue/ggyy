@@ -158,7 +158,7 @@ object CollisionEngine {
     gridCols: Int,
     gridRows: Int,
   ): Boolean {
-    if (tunnels.all { it.queue.isEmpty() } && lotVehicles.size <= 30) {
+    if (tunnels.all { it.queue.isEmpty() } && lotVehicles.size <= 60) {
       return solveLotDfs(lotVehicles, gridCols, gridRows)
     }
     return solveWithTunnelsDfs(
@@ -180,14 +180,14 @@ object CollisionEngine {
     if (n == 0) return true
 
     // Precompute which vehicles block each vehicle i along its straight exit path
-    val blockersMask = IntArray(n)
+    val blockersMask = LongArray(n)
     val boxes = Array(n) { boxForVehicle(lotVehicles[it]) }
     for (i in 0 until n) {
       val v = lotVehicles[i]
       val step = 0.08f
       val maxDist = max(gridCols, gridRows).toFloat() + v.lengthInCells + 2.0f
       var dist = step
-      var mask = 0
+      var mask = 0L
       while (dist <= maxDist) {
         val nx = v.x + v.direction.dx * dist
         val ny = v.y + v.direction.dy * dist
@@ -195,7 +195,7 @@ object CollisionEngine {
         for (j in 0 until n) {
           if (i == j) continue
           if (overlaps(sweptBox, boxes[j])) {
-            mask = mask or (1 shl j)
+            mask = mask or (1L shl j)
           }
         }
         val outX = nx < -v.lengthInCells * 0.6f || nx > gridCols + v.lengthInCells * 0.6f
@@ -206,19 +206,19 @@ object CollisionEngine {
       blockersMask[i] = mask
     }
 
-    val fullMask = (1 shl n) - 1
-    val failedStates = HashSet<Int>()
+    val fullMask = if (n == 64) -1L else (1L shl n) - 1L
+    val failedStates = HashSet<Long>()
     var visitedStates = 0
 
-    fun dfs(presentMask: Int): Boolean {
-      if (presentMask == 0) return true
+    fun dfs(presentMask: Long): Boolean {
+      if (presentMask == 0L) return true
       if (presentMask in failedStates) return false
       if (++visitedStates > 8000) return false
 
       for (i in 0 until n) {
-        if ((presentMask and (1 shl i)) == 0) continue
-        if ((blockersMask[i] and presentMask) == 0) {
-          if (dfs(presentMask xor (1 shl i))) return true
+        if ((presentMask and (1L shl i)) == 0L) continue
+        if ((blockersMask[i] and presentMask) == 0L) {
+          if (dfs(presentMask xor (1L shl i))) return true
         }
       }
       failedStates.add(presentMask)

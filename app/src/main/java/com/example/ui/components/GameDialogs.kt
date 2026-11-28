@@ -57,6 +57,8 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,8 +67,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
@@ -123,6 +127,8 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
+
+val LocalPlayButtonClick = staticCompositionLocalOf<() -> Unit> { {} }
 
 @Composable
 fun GlossyButton(
@@ -196,26 +202,60 @@ fun CoinPill(
         contentScale = ContentScale.Fit,
         modifier = Modifier.fillMaxSize(),
       )
-      val baseSize =
-        if (pillWidth < 120.dp) {
-          if (coins >= 1000) 11.5.sp else 13.5.sp
-        } else {
-          if (coins >= 1000) 13.sp else 16.sp
+      val coinScale =
+        when {
+          coins >= 10000 -> 0.112f
+          coins >= 1000 -> 0.134f
+          else -> 0.156f
         }
-      Text(
-        text = coins.toString(),
-        style =
-          MaterialTheme.typography.labelLarge.copy(
-            fontFamily = FredokaFontFamily,
-            fontSize = baseSize,
-            fontWeight = FontWeight.Bold,
-            shadow = Shadow(color = OutlineInk, offset = Offset(0f, 2f), blurRadius = 2f),
-          ),
-        color = Color.White,
-        maxLines = 1,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(start = pillWidth * 0.27f, end = pillWidth * 0.25f),
-      )
+      val baseSize = (pillWidth.value * coinScale).coerceIn(11.5f, 24f).sp
+      val coinLabel = coins.toString()
+      val coinTextStyle =
+        MaterialTheme.typography.titleMedium.copy(
+          fontFamily = LilitaOneFontFamily,
+          fontSize = baseSize,
+          fontWeight = FontWeight.Normal,
+          letterSpacing = 0.5.sp,
+        )
+      Box(
+        modifier =
+          Modifier
+            .fillMaxWidth()
+            .padding(start = pillWidth * 0.26f, end = pillWidth * 0.24f),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = coinLabel,
+          style =
+            coinTextStyle.copy(
+              drawStyle = Stroke(width = 5.5f, join = StrokeJoin.Round),
+            ),
+          color = Color(0xFF0A0F1A),
+          maxLines = 1,
+          softWrap = false,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.offset(y = 1.dp),
+        )
+        Text(
+          text = coinLabel,
+          style =
+            coinTextStyle.copy(
+              drawStyle = Stroke(width = 4.5f, join = StrokeJoin.Round),
+            ),
+          color = Color(0xFF141D2E),
+          maxLines = 1,
+          softWrap = false,
+          textAlign = TextAlign.Center,
+        )
+        Text(
+          text = coinLabel,
+          style = coinTextStyle,
+          color = Color.White,
+          maxLines = 1,
+          softWrap = false,
+          textAlign = TextAlign.Center,
+        )
+      }
     }
   }
 }
@@ -256,6 +296,120 @@ fun CartoonPopupCard(
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         content()
+      }
+    }
+  }
+}
+
+@Composable
+fun BoardUnlockedDialog(
+  onConfirmOk: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  BackHandler { onConfirmOk() }
+
+  val cardPopScale = remember { Animatable(0.84f) }
+  LaunchedEffect(Unit) {
+    cardPopScale.animateTo(
+      targetValue = 1f,
+      animationSpec = spring(
+        dampingRatio = Spring.DampingRatioMediumBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+      ),
+    )
+  }
+
+  val backdropInteraction = remember { MutableInteractionSource() }
+  val cardInteraction = remember { MutableInteractionSource() }
+  val okInteraction = remember { MutableInteractionSource() }
+  val okPressed by okInteraction.collectIsPressedAsState()
+  val okScale by animateFloatAsState(
+    if (okPressed) 0.92f else 1f,
+    spring(),
+    label = "board_unlocked_ok_scale",
+  )
+
+  BoxWithConstraints(
+    modifier =
+      modifier
+        .fillMaxSize()
+        .background(Color.Black.copy(alpha = 0.85f))
+        .clickable(
+          interactionSource = backdropInteraction,
+          indication = null,
+          onClick = {},
+        )
+        .windowInsetsPadding(WindowInsets.statusBars)
+        .windowInsetsPadding(WindowInsets.displayCutout)
+        .windowInsetsPadding(WindowInsets.navigationBars)
+        .testTag("board_unlocked_dim_backdrop"),
+    contentAlignment = Alignment.Center,
+  ) {
+    val cardAspect = 433f / 577f
+    val targetCardW = minOf(maxWidth, 440.dp, (maxHeight * 0.92f) * cardAspect)
+    BoxWithConstraints(
+      modifier =
+        Modifier
+          .offset(y = -(maxHeight * 0.014f))
+          .width(targetCardW)
+          .aspectRatio(cardAspect)
+          .scale(cardPopScale.value)
+          .clickable(
+            interactionSource = cardInteraction,
+            indication = null,
+            onClick = {},
+          )
+          .testTag("board_unlocked_dialog"),
+    ) {
+      val cardW = maxWidth
+      val cardH = maxHeight
+
+      Image(
+        painter = painterResource(id = R.drawable.popup_board_unlocked),
+        contentDescription = stringResource(R.string.board_unlocked_card_desc),
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize(),
+      )
+
+      val okBtnW = cardW * 0.42f
+      val okBtnH = okBtnW * (275f / 787f)
+      val okTouchH = maxOf(okBtnH, 48.dp)
+
+      Box(
+        modifier =
+          Modifier
+            .align(Alignment.TopCenter)
+            .offset(y = cardH * 0.860f - okTouchH * 0.5f)
+            .size(width = maxOf(okBtnW, 48.dp), height = okTouchH)
+            .scale(okScale)
+            .clickable(
+              interactionSource = okInteraction,
+              indication = null,
+              onClick = onConfirmOk,
+            )
+            .testTag("board_unlocked_ok_button"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(
+          modifier = Modifier.size(width = okBtnW, height = okBtnH),
+          contentAlignment = Alignment.Center,
+        ) {
+          Image(
+            painter = painterResource(id = R.drawable.btn_board_unlocked_green_pill),
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize(),
+          )
+          Image(
+            painter = painterResource(id = R.drawable.txt_board_unlocked_ok),
+            contentDescription = stringResource(R.string.board_unlocked_ok_button),
+            contentScale = ContentScale.Fit,
+            modifier =
+              Modifier
+                .height(okBtnH * 0.54f)
+                .aspectRatio(79f / 51f),
+          )
+        }
       }
     }
   }
@@ -593,10 +747,19 @@ fun PauseDialog(
   vibrationEnabled: Boolean,
   cloudSaveEnabled: Boolean,
   languageLabel: String,
+  passengerSizeScale: Float = 1.0f,
+  passengerHeadScale: Float = 1.0f,
+  passengerWidthScale: Float = 1.0f,
+  passengerHeightScale: Float = 1.0f,
   onToggleSound: (Boolean) -> Unit,
   onToggleVibration: (Boolean) -> Unit,
   onToggleCloudSave: (Boolean) -> Unit,
   onCycleLanguage: () -> Unit,
+  onChangePassengerSize: (Float) -> Unit = {},
+  onChangePassengerHeadScale: (Float) -> Unit = {},
+  onChangePassengerWidthScale: (Float) -> Unit = {},
+  onChangePassengerHeightScale: (Float) -> Unit = {},
+  onResetPassengerTuning: () -> Unit = {},
   onOpenSupport: () -> Unit,
   onResume: () -> Unit,
   onRestart: () -> Unit,
@@ -608,10 +771,19 @@ fun PauseDialog(
     vibrationEnabled = vibrationEnabled,
     cloudSaveEnabled = cloudSaveEnabled,
     languageLabel = languageLabel,
+    passengerSizeScale = passengerSizeScale,
+    passengerHeadScale = passengerHeadScale,
+    passengerWidthScale = passengerWidthScale,
+    passengerHeightScale = passengerHeightScale,
     onToggleSound = onToggleSound,
     onToggleVibration = onToggleVibration,
     onToggleCloudSave = onToggleCloudSave,
     onCycleLanguage = onCycleLanguage,
+    onChangePassengerSize = onChangePassengerSize,
+    onChangePassengerHeadScale = onChangePassengerHeadScale,
+    onChangePassengerWidthScale = onChangePassengerWidthScale,
+    onChangePassengerHeightScale = onChangePassengerHeightScale,
+    onResetPassengerTuning = onResetPassengerTuning,
     onOpenSupport = onOpenSupport,
     onDismiss = onResume,
     onRestart = onRestart,
@@ -626,10 +798,19 @@ fun SettingsPopupOverlay(
   vibrationEnabled: Boolean,
   cloudSaveEnabled: Boolean,
   languageLabel: String,
+  passengerSizeScale: Float = 1.0f,
+  passengerHeadScale: Float = 1.0f,
+  passengerWidthScale: Float = 1.0f,
+  passengerHeightScale: Float = 1.0f,
   onToggleSound: (Boolean) -> Unit,
   onToggleVibration: (Boolean) -> Unit,
   onToggleCloudSave: (Boolean) -> Unit,
   onCycleLanguage: () -> Unit,
+  onChangePassengerSize: (Float) -> Unit = {},
+  onChangePassengerHeadScale: (Float) -> Unit = {},
+  onChangePassengerWidthScale: (Float) -> Unit = {},
+  onChangePassengerHeightScale: (Float) -> Unit = {},
+  onResetPassengerTuning: () -> Unit = {},
   onOpenSupport: () -> Unit,
   onDismiss: () -> Unit,
   onRestart: () -> Unit,
@@ -639,9 +820,28 @@ fun SettingsPopupOverlay(
   val backdropInteraction = remember { MutableInteractionSource() }
   val cardInteraction = remember { MutableInteractionSource() }
   val cardPopScale = remember { Animatable(0.76f) }
+  val playButtonClick = LocalPlayButtonClick.current
   var showLevelsPanel by remember { mutableStateOf(false) }
+  var showPassengerTuner by remember { mutableStateOf(false) }
+  var isAdjustingPassengerSize by remember { mutableStateOf(false) }
+  var activeLegalDoc by remember { mutableStateOf<String?>(null) }
 
-  BackHandler(enabled = showLevelsPanel) {
+  LaunchedEffect(isAdjustingPassengerSize, passengerSizeScale) {
+    if (isAdjustingPassengerSize) {
+      kotlinx.coroutines.delay(950L)
+      isAdjustingPassengerSize = false
+    }
+  }
+
+  BackHandler(enabled = showPassengerTuner) {
+    showPassengerTuner = false
+  }
+
+  BackHandler(enabled = !showPassengerTuner && activeLegalDoc != null) {
+    activeLegalDoc = null
+  }
+
+  BackHandler(enabled = !showPassengerTuner && activeLegalDoc == null && showLevelsPanel) {
     showLevelsPanel = false
   }
 
@@ -657,27 +857,70 @@ fun SettingsPopupOverlay(
   }
 
   val isHomeSettings = onHome == null
+  val livePreviewGhost = isAdjustingPassengerSize && !isHomeSettings
+  val backdropAlpha by animateFloatAsState(
+    targetValue =
+      when {
+        showPassengerTuner && !isHomeSettings -> 0f
+        livePreviewGhost -> 0.08f
+        isHomeSettings -> 0.78f
+        else -> 0.87f
+      },
+    animationSpec = tween(160),
+    label = "settings_backdrop_alpha",
+  )
+  val otherChromeAlpha by animateFloatAsState(
+    targetValue = if (livePreviewGhost) 0.12f else 1f,
+    animationSpec = tween(160),
+    label = "settings_chrome_alpha",
+  )
   BoxWithConstraints(
     modifier =
       modifier
         .fillMaxSize()
-        .background(Color.Black.copy(alpha = if (isHomeSettings) 0.78f else 0.87f))
+        .background(Color.Black.copy(alpha = backdropAlpha))
         .clickable(
           interactionSource = backdropInteraction,
           indication = null,
-          onClick = onDismiss,
+          onClick = {
+            if (showPassengerTuner) showPassengerTuner = false else onDismiss()
+          },
         )
         .windowInsetsPadding(WindowInsets.statusBars)
         .windowInsetsPadding(WindowInsets.displayCutout)
         .windowInsetsPadding(WindowInsets.navigationBars)
         .padding(horizontal = 8.dp, vertical = 10.dp)
         .testTag("settings_dim_backdrop"),
-    contentAlignment = Alignment.Center,
+    contentAlignment = if (showPassengerTuner && !isHomeSettings) Alignment.BottomCenter else Alignment.Center,
   ) {
+    if (showPassengerTuner && !isHomeSettings) {
+      PassengerTunerBottomPanel(
+        sizeScale = passengerSizeScale,
+        headScale = passengerHeadScale,
+        widthScale = passengerWidthScale,
+        heightScale = passengerHeightScale,
+        onChangeSize = onChangePassengerSize,
+        onChangeHead = onChangePassengerHeadScale,
+        onChangeWidth = onChangePassengerWidthScale,
+        onChangeHeight = onChangePassengerHeightScale,
+        onResetAll = onResetPassengerTuning,
+        onDone = { showPassengerTuner = false },
+        modifier =
+          Modifier
+            .widthIn(max = 460.dp)
+            .fillMaxWidth()
+            .clickable(
+              interactionSource = cardInteraction,
+              indication = null,
+              onClick = {},
+            ),
+      )
+      return@BoxWithConstraints
+    }
     val cardAspect = if (isHomeSettings) 950f / 1050f else 1058f / 1442f
     val targetCardW =
       if (isHomeSettings) {
-        minOf(maxWidth * 0.85f, 390.dp, (maxHeight * 0.56f) * cardAspect)
+        minOf(maxWidth * 0.85f, 390.dp, (maxHeight * 0.62f) * cardAspect)
       } else {
         minOf(maxWidth * 0.94f, 420.dp, (maxHeight * 0.90f) * cardAspect)
       }
@@ -704,7 +947,7 @@ fun SettingsPopupOverlay(
           ),
         contentDescription = "Settings",
         contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().alpha(otherChromeAlpha),
       )
 
       // Top-right glossy red 'X' close button protruding cleanly outward on the ribbon corner
@@ -751,14 +994,15 @@ fun SettingsPopupOverlay(
 
       // Off-white/cream rounded tray behind the 3 top grouped toggle icons (neatly inset inside blue frame)
       val trayW = cardW * (if (isHomeSettings) 0.790f else 0.800f)
-      val trayH = cardH * (if (isHomeSettings) 0.176f else 0.156f)
-      val trayTopY = cardH * (if (isHomeSettings) 0.262f else 0.180f)
+      val trayH = cardH * (if (isHomeSettings) 0.176f else 0.150f)
+      val trayTopY = cardH * (if (isHomeSettings) 0.262f else 0.172f)
       val trayX = (cardW - trayW) * 0.5f
       Canvas(
         modifier =
           Modifier
             .offset(x = trayX, y = trayTopY)
             .size(width = trayW, height = trayH)
+            .alpha(otherChromeAlpha)
             .testTag("settings_top_cream_tray"),
       ) {
         val w = size.width
@@ -877,7 +1121,10 @@ fun SettingsPopupOverlay(
       SettingsSpriteButton(
         drawableRes = R.drawable.btn_settings_guide,
         contentDescription = "Themes & Stages",
-        onClick = { showLevelsPanel = true },
+        onClick = {
+          playButtonClick()
+          showLevelsPanel = true
+        },
         testTag = "settings_guide_button",
         modifier =
           Modifier
@@ -885,84 +1132,315 @@ fun SettingsPopupOverlay(
             .size(width = iconBoxW, height = iconBoxH),
       )
 
-      // Middle vertical stack: Home + Replay + Support + Language in-game, Support + Language on Home
-      val stackBtnW = cardW * (if (isHomeSettings) 0.44f else 0.395f)
-      val stackBtnH = maxOf(48.dp, stackBtnW * (146f / 394f))
-      val stackX = (cardW - stackBtnW) * 0.5f
-
+      // Middle vertical stack:
+      // - In-game Pause (onHome != null): 4 uniform glossy green pills -> Home, Resume, Replay, Support (no Language button)
+      // - Home Settings (isHomeSettings): Support + Language
       if (onHome != null) {
-        SettingsSpriteButton(
-          drawableRes = R.drawable.btn_settings_home,
-          contentDescription = "Home",
-          onClick = onHome,
-          testTag = "pause_home_button",
-          modifier =
-            Modifier
-              .offset(x = stackX, y = cardH * 0.352f)
-              .size(width = stackBtnW, height = stackBtnH),
-        )
-
-        SettingsSpriteButton(
-          drawableRes = R.drawable.btn_settings_replay,
-          contentDescription = "Replay Level",
-          onClick = onRestart,
-          testTag = "restart_button",
-          modifier =
-            Modifier
-              .offset(x = stackX, y = cardH * 0.471f)
-              .size(width = stackBtnW, height = stackBtnH),
-        )
-      }
-
-      val supportY = if (isHomeSettings) cardH * 0.466f else cardH * 0.590f
-      val langY = if (isHomeSettings) cardH * 0.632f else cardH * 0.709f
-
-      SettingsSpriteButton(
-        drawableRes = R.drawable.btn_settings_support,
-        contentDescription = "Support and Help",
-        onClick = onOpenSupport,
-        testTag = "settings_support_button",
-        modifier =
-          Modifier
-            .offset(x = stackX, y = supportY)
-            .size(width = stackBtnW, height = stackBtnH),
-      )
-
-      Box(
-        modifier =
-          Modifier
-            .offset(x = stackX, y = langY)
-            .size(width = stackBtnW, height = stackBtnH),
-        contentAlignment = Alignment.Center,
-      ) {
-        SettingsSpriteButton(
-          drawableRes = R.drawable.btn_settings_language,
-          contentDescription = "Language: $languageLabel",
-          onClick = onCycleLanguage,
-          testTag = "settings_language_button",
-          modifier = Modifier.fillMaxSize(),
-        )
-        if (languageLabel != "English") {
-          Box(
+        val pillBtnW = cardW * 0.340f
+        val pillVisualH = pillBtnW * (79f / 202f)
+        val pillTouchH = maxOf(48.dp, pillVisualH)
+        val pillX = (cardW - pillBtnW) * 0.5f
+        val zoneTop = cardH * 0.328f
+        val zoneBottom = cardH * 0.744f
+        val firstCenterY = zoneTop + pillTouchH * 0.5f
+        val lastCenterY = zoneBottom - pillTouchH * 0.5f
+        val pauseButtons =
+          listOf(
+            PausePillSpec(
+              label = "Home",
+              drawableRes = R.drawable.btn_pause_pill_red,
+              outlineColor = Color(0xFF7A0000),
+              shadowColor = Color(0xFF4F0000),
+              testTag = "pause_home_button",
+              action = onHome,
+            ),
+            PausePillSpec(
+              label = "Resume",
+              drawableRes = R.drawable.btn_pause_pill,
+              outlineColor = Color(0xFF0A5C00),
+              shadowColor = Color(0xFF063D00),
+              testTag = "pause_resume_button",
+              action = onDismiss,
+            ),
+            PausePillSpec(
+              label = "Replay",
+              drawableRes = R.drawable.btn_pause_pill_orange,
+              outlineColor = Color(0xFF8A2E00),
+              shadowColor = Color(0xFF5A1C00),
+              testTag = "restart_button",
+              action = onRestart,
+            ),
+            PausePillSpec(
+              label = "Support",
+              drawableRes = R.drawable.btn_pause_pill_purple,
+              outlineColor = Color(0xFF4D007A),
+              shadowColor = Color(0xFF310052),
+              testTag = "settings_support_button",
+              action = onOpenSupport,
+            ),
+          )
+        pauseButtons.forEachIndexed { idx, spec ->
+          val centerY = firstCenterY + (lastCenterY - firstCenterY) * (idx / 3f)
+          PausePillButton(
+            label = spec.label,
+            drawableRes = spec.drawableRes,
+            outlineColor = spec.outlineColor,
+            shadowColor = spec.shadowColor,
+            pillWidth = pillBtnW,
+            pillVisualHeight = pillVisualH,
+            onClick = spec.action,
+            testTag = spec.testTag,
             modifier =
               Modifier
-                .width(stackBtnW * 0.80f)
-                .height(stackBtnH * 0.68f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(ShopPurple),
-            contentAlignment = Alignment.Center,
+                .offset(x = pillX, y = centerY - pillTouchH * 0.5f)
+                .size(width = pillBtnW, height = pillTouchH)
+                .alpha(otherChromeAlpha),
+          )
+        }
+      } else {
+        val stackBtnW = cardW * 0.40f
+        val stackBtnVisualH = stackBtnW * (74f / 202f)
+        val stackBtnH = maxOf(48.dp, stackBtnVisualH)
+        val stackX = (cardW - stackBtnW) * 0.5f
+        val supportY = cardH * 0.465f
+
+        PausePillButton(
+          label = "Support",
+          drawableRes = R.drawable.btn_pause_pill_gold,
+          outlineColor = Color(0xFF8C3C00),
+          shadowColor = Color(0xFF562100),
+          pillWidth = stackBtnW,
+          pillVisualHeight = stackBtnVisualH,
+          onClick = onOpenSupport,
+          testTag = "settings_support_button",
+          modifier =
+            Modifier
+              .offset(x = stackX, y = supportY)
+              .size(width = stackBtnW, height = stackBtnH)
+              .alpha(otherChromeAlpha),
+        )
+
+        val pairPillW = cardW * 0.345f
+        val pairPillH = pairPillW * (79f / 202f)
+        val pairTouchH = maxOf(48.dp, pairPillH)
+        val pairRowY = cardH * 0.648f - (pairTouchH - pairPillH) * 0.5f
+        Row(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .offset(y = pairRowY)
+              .alpha(otherChromeAlpha),
+          horizontalArrangement = Arrangement.spacedBy(cardW * 0.045f, Alignment.CenterHorizontally),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          PausePillButton(
+            label = "Terms",
+            drawableRes = R.drawable.btn_pause_pill_red,
+            outlineColor = Color(0xFF7A0000),
+            shadowColor = Color(0xFF4F0000),
+            pillWidth = pairPillW,
+            pillVisualHeight = pairPillH,
+            onClick = {
+              playButtonClick()
+              activeLegalDoc = "Terms"
+            },
+            testTag = "home_settings_red_pill",
+            modifier = Modifier.size(width = pairPillW, height = pairTouchH),
+          )
+          PausePillButton(
+            label = "Privacy",
+            drawableRes = R.drawable.btn_pause_pill,
+            outlineColor = Color(0xFF0A5C00),
+            shadowColor = Color(0xFF063D00),
+            pillWidth = pairPillW,
+            pillVisualHeight = pairPillH,
+            onClick = {
+              playButtonClick()
+              activeLegalDoc = "Privacy"
+            },
+            testTag = "home_settings_green_pill",
+            modifier = Modifier.size(width = pairPillW, height = pairTouchH),
+          )
+        }
+      }
+
+      // Passenger Size live-adjustable slider control (in-game Pause/Settings only; hidden on Home Settings)
+      if (!isHomeSettings) {
+        val sizeBarW = cardW * 0.78f
+        val sizeBarH = maxOf(54.dp, cardH * 0.102f)
+        val sizeBarX = (cardW - sizeBarW) * 0.5f
+        val sizeBarY = cardH * 0.750f
+        val sizePct = (passengerSizeScale * 100f).roundToInt()
+
+        Column(
+          modifier =
+            Modifier
+              .offset(x = sizeBarX, y = sizeBarY)
+              .size(width = sizeBarW, height = sizeBarH)
+              .clip(RoundedCornerShape(14.dp))
+              .background(
+                Brush.verticalGradient(
+                  colors = listOf(Color(0xFFFCF2E3), Color(0xFFF3DEC0)),
+                ),
+              )
+              .border(width = 2.dp, color = Color(0xFFD6AB7B), shape = RoundedCornerShape(14.dp))
+              .padding(horizontal = 10.dp, vertical = 4.dp)
+              .testTag("settings_passenger_size_panel"),
+          verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
           ) {
             Text(
-              text = languageLabel,
+              text = "Passenger Size",
               style =
-                MaterialTheme.typography.titleMedium.copy(
+                MaterialTheme.typography.labelLarge.copy(
                   fontFamily = FredokaFontFamily,
                   fontWeight = FontWeight.ExtraBold,
-                  shadow = Shadow(color = OutlineInk, offset = Offset(0f, 2f), blurRadius = 2f),
+                  fontSize = 12.sp,
                 ),
-              color = Color.White,
+              color = Color(0xFF1A3A70),
               maxLines = 1,
             )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+              Box(
+                modifier =
+                  Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1E9E47))
+                    .clickable {
+                      playButtonClick()
+                      showPassengerTuner = true
+                    }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "Open Head Width Height Controls" }
+                    .testTag("open_passenger_tuner_button"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "Head • W • H",
+                  style =
+                    MaterialTheme.typography.labelMedium.copy(
+                      fontFamily = FredokaFontFamily,
+                      fontWeight = FontWeight.ExtraBold,
+                      fontSize = 10.5.sp,
+                    ),
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              }
+              Box(
+                modifier =
+                  Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (sizePct == 100) Color(0xFF2878E8) else Color(0xFFFF8C00))
+                    .clickable {
+                      playButtonClick()
+                      isAdjustingPassengerSize = true
+                      onChangePassengerSize(1.0f)
+                    }
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                    .semantics { contentDescription = "Reset passenger size to 100 percent" }
+                    .testTag("passenger_size_reset_badge"),
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = "$sizePct%",
+                  style =
+                    MaterialTheme.typography.labelMedium.copy(
+                      fontFamily = FredokaFontFamily,
+                      fontWeight = FontWeight.ExtraBold,
+                      fontSize = 11.sp,
+                    ),
+                  color = Color.White,
+                  maxLines = 1,
+                )
+              }
+            }
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Box(
+              modifier =
+                Modifier
+                  .size(width = 34.dp, height = 28.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF2475E6))
+                  .clickable {
+                    playButtonClick()
+                    isAdjustingPassengerSize = true
+                    onChangePassengerSize((passengerSizeScale - 0.05f).coerceIn(0.65f, 1.50f))
+                  }
+                  .semantics { contentDescription = "Decrease passenger size" }
+                  .testTag("passenger_size_decrease"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "−",
+                style =
+                  MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = FredokaFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                  ),
+                color = Color.White,
+              )
+            }
+
+            Slider(
+              value = passengerSizeScale.coerceIn(0.65f, 1.50f),
+              onValueChange = { nextVal ->
+                isAdjustingPassengerSize = true
+                onChangePassengerSize(nextVal)
+              },
+              onValueChangeFinished = {
+                isAdjustingPassengerSize = false
+              },
+              valueRange = 0.65f..1.50f,
+              colors =
+                SliderDefaults.colors(
+                  thumbColor = Color(0xFFFF8C00),
+                  activeTrackColor = Color(0xFF2475E6),
+                  inactiveTrackColor = Color(0xFFD6BE9C),
+                ),
+              modifier = Modifier.weight(1f).testTag("passenger_size_slider"),
+            )
+
+            Box(
+              modifier =
+                Modifier
+                  .size(width = 34.dp, height = 28.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(Color(0xFF2475E6))
+                  .clickable {
+                    playButtonClick()
+                    isAdjustingPassengerSize = true
+                    onChangePassengerSize((passengerSizeScale + 0.05f).coerceIn(0.65f, 1.50f))
+                  }
+                  .semantics { contentDescription = "Increase passenger size" }
+                  .testTag("passenger_size_increase"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Text(
+                text = "+",
+                style =
+                  MaterialTheme.typography.titleMedium.copy(
+                    fontFamily = FredokaFontFamily,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                  ),
+                color = Color.White,
+              )
+            }
           }
         }
       }
@@ -971,13 +1449,14 @@ fun SettingsPopupOverlay(
       val cloudBtnW = cardW * 0.205f
       val cloudBtnVisualH = cloudBtnW * (131f / 194f)
       val cloudRowH = maxOf(48.dp, cloudBtnVisualH)
-      val cloudCenterY = cardH * (if (isHomeSettings) 0.868f else 0.884f)
+      val cloudCenterY = cardH * (if (isHomeSettings) 0.872f else 0.900f)
       Row(
         modifier =
           Modifier
             .offset(x = cardW * 0.130f, y = cloudCenterY - cloudRowH * 0.5f)
             .width(cardW * 0.740f)
-            .height(cloudRowH),
+            .height(cloudRowH)
+            .alpha(otherChromeAlpha),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
       ) {
@@ -1081,7 +1560,10 @@ fun SettingsPopupOverlay(
                   .clickable(
                     interactionSource = panelCloseInteraction,
                     indication = null,
-                    onClick = { showLevelsPanel = false },
+                    onClick = {
+                      playButtonClick()
+                      showLevelsPanel = false
+                    },
                   )
                   .semantics { contentDescription = "Close Stages Panel" }
                   .testTag("settings_levels_close_button"),
@@ -1096,6 +1578,351 @@ fun SettingsPopupOverlay(
             }
           }
         }
+      }
+
+      AnimatedVisibility(
+        visible = activeLegalDoc != null,
+        enter = fadeIn(animationSpec = tween(160)) + scaleIn(initialScale = 0.92f),
+        exit = fadeOut(animationSpec = tween(140)) + scaleOut(targetScale = 0.92f),
+        modifier =
+          Modifier
+            .align(Alignment.Center)
+            .size(width = cardW * 0.84f, height = cardH * 0.72f),
+      ) {
+        val docTitle = if (activeLegalDoc == "Terms") "Terms of Service" else "Privacy Policy"
+        val docBody =
+          if (activeLegalDoc == "Terms") {
+            "By playing Bus Jam, you agree to use the game fairly for personal entertainment. Virtual coins, boosters, and level progress are stored locally or synced when Cloud Save is enabled and carry no real-world monetary value."
+          } else {
+            "Bus Jam respects your privacy. Game settings, sound preferences, and level progress remain on your device unless you choose to enable Cloud Save. We do not sell personal data to third parties."
+          }
+        val legalCardInteraction = remember { MutableInteractionSource() }
+        Column(
+          modifier =
+            Modifier
+              .fillMaxSize()
+              .clip(RoundedCornerShape(20.dp))
+              .background(
+                Brush.verticalGradient(
+                  colors = listOf(Color(0xFFFCF4E8), Color(0xFFF3DEC0)),
+                ),
+              )
+              .border(width = 3.dp, color = Color(0xFF2475E6), shape = RoundedCornerShape(20.dp))
+              .clickable(interactionSource = legalCardInteraction, indication = null, onClick = {})
+              .padding(14.dp)
+              .testTag("home_settings_legal_dialog"),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Text(
+              text = docTitle,
+              style =
+                MaterialTheme.typography.titleMedium.copy(
+                  fontFamily = LilitaOneFontFamily,
+                  fontSize = 19.sp,
+                ),
+              color = Color(0xFF163569),
+            )
+            Box(
+              modifier =
+                Modifier
+                  .size(48.dp)
+                  .clickable {
+                    playButtonClick()
+                    activeLegalDoc = null
+                  }
+                  .semantics { contentDescription = "Close $docTitle" }
+                  .testTag("home_settings_legal_close"),
+              contentAlignment = Alignment.CenterEnd,
+            ) {
+              Image(
+                painter = painterResource(id = R.drawable.btn_panel_close_red),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(30.dp),
+              )
+            }
+          }
+          Box(
+            modifier =
+              Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+          ) {
+            Text(
+              text = docBody,
+              style =
+                MaterialTheme.typography.bodyMedium.copy(
+                  fontFamily = FredokaFontFamily,
+                  fontSize = 14.sp,
+                  lineHeight = 20.sp,
+                ),
+              color = Color(0xFF28416B),
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun PassengerTunerBottomPanel(
+  sizeScale: Float,
+  headScale: Float,
+  widthScale: Float,
+  heightScale: Float,
+  onChangeSize: (Float) -> Unit,
+  onChangeHead: (Float) -> Unit,
+  onChangeWidth: (Float) -> Unit,
+  onChangeHeight: (Float) -> Unit,
+  onResetAll: () -> Unit,
+  onDone: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Column(
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(20.dp))
+        .background(
+          Brush.verticalGradient(
+            colors = listOf(Color(0xFFFCF4E8), Color(0xFFF3DEC0)),
+          ),
+        )
+        .border(width = 3.dp, color = Color(0xFF2475E6), shape = RoundedCornerShape(20.dp))
+        .padding(horizontal = 12.dp, vertical = 10.dp)
+        .testTag("passenger_tuner_bottom_panel"),
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text(
+        text = "Passenger Live Tuner",
+        style =
+          MaterialTheme.typography.titleMedium.copy(
+            fontFamily = FredokaFontFamily,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 15.sp,
+          ),
+        color = Color(0xFF163569),
+      )
+      val playButtonClick = LocalPlayButtonClick.current
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+          modifier =
+            Modifier
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xFFFF8C00))
+              .clickable {
+                playButtonClick()
+                onResetAll()
+              }
+              .padding(horizontal = 10.dp, vertical = 5.dp)
+              .testTag("tuner_reset_all"),
+        ) {
+          Text(
+            text = "Reset",
+            style =
+              MaterialTheme.typography.labelLarge.copy(
+                fontFamily = FredokaFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 12.sp,
+              ),
+            color = Color.White,
+          )
+        }
+        Box(
+          modifier =
+            Modifier
+              .clip(RoundedCornerShape(10.dp))
+              .background(Color(0xFF1E9E47))
+              .clickable {
+                playButtonClick()
+                onDone()
+              }
+              .padding(horizontal = 12.dp, vertical = 5.dp)
+              .testTag("tuner_done_button"),
+        ) {
+          Text(
+            text = "Done",
+            style =
+              MaterialTheme.typography.labelLarge.copy(
+                fontFamily = FredokaFontFamily,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 12.sp,
+              ),
+            color = Color.White,
+          )
+        }
+      }
+    }
+
+    PassengerTuneRow(
+      label = "Overall Size",
+      value = sizeScale,
+      minVal = 0.65f,
+      maxVal = 1.50f,
+      onChange = onChangeSize,
+      tagPrefix = "tuner_size",
+    )
+    PassengerTuneRow(
+      label = "Head (Sar)",
+      value = headScale,
+      minVal = 0.65f,
+      maxVal = 1.65f,
+      onChange = onChangeHead,
+      tagPrefix = "tuner_head",
+    )
+    PassengerTuneRow(
+      label = "Width (Mota)",
+      value = widthScale,
+      minVal = 0.65f,
+      maxVal = 1.65f,
+      onChange = onChangeWidth,
+      tagPrefix = "tuner_width",
+    )
+    PassengerTuneRow(
+      label = "Height (Lamba)",
+      value = heightScale,
+      minVal = 0.65f,
+      maxVal = 1.65f,
+      onChange = onChangeHeight,
+      tagPrefix = "tuner_height",
+    )
+  }
+}
+
+@Composable
+private fun PassengerTuneRow(
+  label: String,
+  value: Float,
+  minVal: Float,
+  maxVal: Float,
+  onChange: (Float) -> Unit,
+  tagPrefix: String,
+) {
+  val pct = (value * 100f).roundToInt()
+  val playButtonClick = LocalPlayButtonClick.current
+  Column(
+    modifier =
+      Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .background(Color(0xFFFFFAF2))
+        .border(1.2.dp, Color(0xFFD6AB7B), RoundedCornerShape(12.dp))
+        .padding(horizontal = 8.dp, vertical = 4.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Text(
+        text = label,
+        style =
+          MaterialTheme.typography.labelMedium.copy(
+            fontFamily = FredokaFontFamily,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 12.sp,
+          ),
+        color = Color(0xFF1A3A70),
+      )
+      Box(
+        modifier =
+          Modifier
+            .clip(RoundedCornerShape(7.dp))
+            .background(if (pct == 100) Color(0xFF2878E8) else Color(0xFFFF8C00))
+            .clickable {
+              playButtonClick()
+              onChange(1.0f)
+            }
+            .padding(horizontal = 7.dp, vertical = 1.dp)
+            .testTag("${tagPrefix}_pct"),
+      ) {
+        Text(
+          text = "$pct%",
+          style =
+            MaterialTheme.typography.labelSmall.copy(
+              fontFamily = FredokaFontFamily,
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 11.sp,
+            ),
+          color = Color.White,
+        )
+      }
+    }
+    Row(
+      modifier = Modifier.fillMaxWidth().height(30.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Box(
+        modifier =
+          Modifier
+            .size(width = 34.dp, height = 26.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF2475E6))
+            .clickable {
+              playButtonClick()
+              onChange((value - 0.05f).coerceIn(minVal, maxVal))
+            }
+            .testTag("${tagPrefix}_dec"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "−",
+          style =
+            MaterialTheme.typography.titleMedium.copy(
+              fontFamily = FredokaFontFamily,
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 15.sp,
+            ),
+          color = Color.White,
+        )
+      }
+      Slider(
+        value = value.coerceIn(minVal, maxVal),
+        onValueChange = onChange,
+        valueRange = minVal..maxVal,
+        colors =
+          SliderDefaults.colors(
+            thumbColor = Color(0xFFFF8C00),
+            activeTrackColor = Color(0xFF2475E6),
+            inactiveTrackColor = Color(0xFFD6BE9C),
+          ),
+        modifier = Modifier.weight(1f).testTag("${tagPrefix}_slider"),
+      )
+      Box(
+        modifier =
+          Modifier
+            .size(width = 34.dp, height = 26.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF2475E6))
+            .clickable {
+              playButtonClick()
+              onChange((value + 0.05f).coerceIn(minVal, maxVal))
+            }
+            .testTag("${tagPrefix}_inc"),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = "+",
+          style =
+            MaterialTheme.typography.titleMedium.copy(
+              fontFamily = FredokaFontFamily,
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 15.sp,
+            ),
+          color = Color.White,
+        )
       }
     }
   }
@@ -1131,6 +1958,88 @@ private fun SettingsSpriteButton(
       contentScale = ContentScale.Fit,
       modifier = Modifier.fillMaxSize(),
     )
+  }
+}
+
+private data class PausePillSpec(
+  val label: String,
+  val drawableRes: Int,
+  val outlineColor: Color,
+  val shadowColor: Color,
+  val testTag: String,
+  val action: () -> Unit,
+)
+
+@Composable
+private fun PausePillButton(
+  label: String,
+  drawableRes: Int,
+  outlineColor: Color,
+  shadowColor: Color,
+  pillWidth: Dp,
+  pillVisualHeight: Dp,
+  onClick: () -> Unit,
+  testTag: String,
+  modifier: Modifier = Modifier,
+) {
+  val interaction = remember { MutableInteractionSource() }
+  val pressed by interaction.collectIsPressedAsState()
+  val scale by animateFloatAsState(if (pressed) 0.92f else 1f, spring(), label = "${testTag}_scale")
+
+  Box(
+    modifier =
+      modifier
+        .scale(scale)
+        .clickable(
+          interactionSource = interaction,
+          indication = null,
+          onClick = onClick,
+        )
+        .testTag(testTag),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier = Modifier.size(width = pillWidth, height = pillVisualHeight),
+      contentAlignment = Alignment.Center,
+    ) {
+      Image(
+        painter = painterResource(id = drawableRes),
+        contentDescription = label,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.fillMaxSize(),
+      )
+      val labelStyle =
+        MaterialTheme.typography.titleMedium.copy(
+          fontFamily = LilitaOneFontFamily,
+          fontSize = (pillVisualHeight.value * 0.45f).coerceIn(15f, 22f).sp,
+          fontWeight = FontWeight.Normal,
+          letterSpacing = 0.3.sp,
+        )
+      Text(
+        text = label,
+        style = labelStyle.copy(drawStyle = Stroke(width = 7.0f, join = StrokeJoin.Round)),
+        color = shadowColor,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.offset(y = 0.8.dp),
+      )
+      Text(
+        text = label,
+        style = labelStyle.copy(drawStyle = Stroke(width = 6.0f, join = StrokeJoin.Round)),
+        color = outlineColor,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.offset(y = (-0.5).dp),
+      )
+      Text(
+        text = label,
+        style = labelStyle,
+        color = Color.White,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier.offset(y = (-0.5).dp),
+      )
+    }
   }
 }
 
@@ -1220,26 +2129,11 @@ private fun HelpStepRow(step: String, title: String, desc: String) {
 fun BoosterPurchaseDialog(
   booster: BoosterType,
   coins: Int,
-  notice: String?,
+  @Suppress("UNUSED_PARAMETER") notice: String? = null,
   onGetFree: () -> Unit,
   onBuy: () -> Unit,
   onDismiss: () -> Unit,
 ) {
-  val drawableRes =
-    when (booster) {
-      BoosterType.BOARD -> R.drawable.popup_booster_board
-      BoosterType.REFRESH -> R.drawable.popup_booster_refresh
-      BoosterType.VIP_SLOT -> R.drawable.popup_booster_vip
-    }
-  val aspectRatio =
-    when (booster) {
-      BoosterType.BOARD -> 894f / 1124f
-      BoosterType.REFRESH -> 890f / 1122f
-      BoosterType.VIP_SLOT -> 890f / 1143f
-    }
-  val closeCenterY = if (booster == BoosterType.VIP_SLOT) 0.161f else 0.148f
-  val buttonsTopY = if (booster == BoosterType.VIP_SLOT) 0.775f else 0.790f
-
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -1248,79 +2142,303 @@ fun BoosterPurchaseDialog(
       modifier = Modifier.widthIn(max = 350.dp).fillMaxWidth(0.86f),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      BoxWithConstraints(
-        modifier =
-          Modifier
-            .fillMaxWidth()
-            .aspectRatio(aspectRatio)
-            .testTag("booster_popup_card"),
-      ) {
-        val cardW = maxWidth
-        val cardH = maxHeight
-
-        Image(
-          painter = painterResource(id = drawableRes),
-          contentDescription = booster.title,
-          contentScale = ContentScale.Fit,
-          modifier = Modifier.fillMaxSize(),
-        )
-
-        // Top-right red 'X' close button
-        val closeSize = maxOf(48.dp, cardW * 0.145f)
-        Box(
+      if (booster == BoosterType.BOARD) {
+        BoxWithConstraints(
           modifier =
             Modifier
-              .offset(
-                x = cardW * 0.932f - closeSize / 2f,
-                y = cardH * closeCenterY - closeSize / 2f,
-              )
-              .size(closeSize)
-              .clip(CircleShape)
-              .clickable(onClick = onDismiss)
-              .semantics { contentDescription = "Close ${booster.title} popup" }
-              .testTag("booster_popup_close"),
-        )
-
-        // Bottom-left 'Get' free booster button
-        Box(
-          modifier =
-            Modifier
-              .offset(x = cardW * 0.105f, y = cardH * buttonsTopY)
-              .size(width = cardW * 0.375f, height = maxOf(48.dp, cardH * 0.155f))
-              .clip(RoundedCornerShape(16.dp))
-              .clickable(onClick = onGetFree)
-              .semantics { contentDescription = "Get ${booster.title}" }
-              .testTag("booster_popup_get"),
-        )
-
-        // Bottom-right '200' coin purchase button
-        Box(
-          modifier =
-            Modifier
-              .offset(x = cardW * 0.505f, y = cardH * buttonsTopY)
-              .size(width = cardW * 0.385f, height = maxOf(48.dp, cardH * 0.155f))
-              .clip(RoundedCornerShape(16.dp))
-              .clickable(onClick = onBuy)
-              .semantics { contentDescription = "Buy ${booster.title} for ${booster.costCoins} coins" }
-              .testTag("buy_booster_confirm"),
-        )
-      }
-
-      if (notice != null) {
-        Spacer(Modifier.height(10.dp))
-        Box(
-          modifier =
-            Modifier
-              .clip(RoundedCornerShape(14.dp))
-              .background(Color.White.copy(alpha = 0.96f))
-              .border(2.dp, AlertRed, RoundedCornerShape(14.dp))
-              .padding(horizontal = 14.dp, vertical = 6.dp),
+              .fillMaxWidth()
+              .aspectRatio(390f / 538f)
+              .testTag("booster_popup_card"),
         ) {
-          Text(
-            text = "$notice (Coins: $coins)",
-            style = MaterialTheme.typography.labelLarge.copy(fontFamily = FredokaFontFamily),
-            color = AlertRed,
-            textAlign = TextAlign.Center,
+          val cardW = maxWidth
+          val cardH = maxHeight
+
+          // 1. Red glossy card background with red ribbon (Image 1)
+          Image(
+            painter = painterResource(id = R.drawable.popup_booster_board_red),
+            contentDescription = "Board",
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize(),
+          )
+
+          // 2. "Board" ribbon graphic extracted from Image 2 and placed high-centered in the ribbon arch
+          Image(
+            painter = painterResource(id = R.drawable.txt_booster_board_title),
+            contentDescription = "Board",
+            contentScale = ContentScale.Fit,
+            modifier =
+              Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = cardH * 0.028f)
+                .width(cardW * 0.355f)
+                .aspectRatio(124f / 42f),
+          )
+
+          // 3. Top-right glossy red 'X' close button
+          val closeTouchSize = maxOf(48.dp, cardW * 0.155f)
+          val closeVisualSize = cardW * 0.128f
+          val closeInteraction = remember { MutableInteractionSource() }
+          val closePressed by closeInteraction.collectIsPressedAsState()
+          val closeScale by animateFloatAsState(
+            if (closePressed) 0.90f else 1f,
+            spring(),
+            label = "board_popup_close_scale",
+          )
+          Box(
+            modifier =
+              Modifier
+                .align(Alignment.TopStart)
+                .offset(
+                  x = cardW * 0.905f - closeTouchSize * 0.5f,
+                  y = cardH * 0.152f - closeTouchSize * 0.5f,
+                )
+                .size(closeTouchSize)
+                .scale(closeScale)
+                .clickable(
+                  interactionSource = closeInteraction,
+                  indication = null,
+                  onClick = onDismiss,
+                )
+                .semantics { contentDescription = "Close Board popup" }
+                .testTag("booster_popup_close"),
+            contentAlignment = Alignment.Center,
+          ) {
+            Image(
+              painter = painterResource(id = R.drawable.btn_panel_close_red),
+              contentDescription = null,
+              contentScale = ContentScale.Fit,
+              modifier = Modifier.size(closeVisualSize),
+            )
+          }
+
+          // 4. Off-white cream panel placed in the middle, containing the orange Board booster icon + description
+          val panelW = cardW * 0.855f
+          val panelH = cardH * 0.478f
+          Box(
+            modifier =
+              Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = cardH * 0.270f)
+                .size(width = panelW, height = panelH),
+            contentAlignment = Alignment.Center,
+          ) {
+            Image(
+              painter = painterResource(id = R.drawable.panel_booster_cream),
+              contentDescription = null,
+              contentScale = ContentScale.FillBounds,
+              modifier = Modifier.fillMaxSize(),
+            )
+            Column(
+              modifier =
+                Modifier
+                  .fillMaxSize()
+                  .padding(horizontal = panelW * 0.055f, vertical = panelH * 0.08f),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.SpaceEvenly,
+            ) {
+              // Glossy purple-background Board booster icon (Image 2)
+              Image(
+                painter = painterResource(id = R.drawable.ic_booster_board_purple),
+                contentDescription = "Board Booster",
+                contentScale = ContentScale.Fit,
+                modifier =
+                  Modifier
+                    .width(cardW * 0.34f)
+                    .aspectRatio(340f / 325f),
+              )
+
+              // Description text extracted from the reference cream panel (bold warm brown, zero stroke)
+              Image(
+                painter = painterResource(id = R.drawable.txt_booster_board_desc),
+                contentDescription = "Force buffered trucks to board matching passengers immediately.",
+                contentScale = ContentScale.Fit,
+                modifier =
+                  Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(447f / 58f),
+              )
+            }
+          }
+
+          // 5. Bottom action buttons: Orange clapperboard "Get" + Teal coin "200" placed like reference popup
+          val btnRowW = cardW * 0.855f
+          val btnGap = cardW * 0.035f
+          val btnW = (btnRowW - btnGap) * 0.5f
+          val getBtnH = btnW * (91f / 198f)
+          val buyBtnH = btnW * (91f / 196f)
+          val btnTouchH = maxOf(48.dp, getBtnH, buyBtnH)
+
+          val getInteraction = remember { MutableInteractionSource() }
+          val getPressed by getInteraction.collectIsPressedAsState()
+          val getScale by animateFloatAsState(
+            if (getPressed) 0.92f else 1f,
+            spring(),
+            label = "board_popup_get_scale",
+          )
+
+          val buyInteraction = remember { MutableInteractionSource() }
+          val buyPressed by buyInteraction.collectIsPressedAsState()
+          val buyScale by animateFloatAsState(
+            if (buyPressed) 0.92f else 1f,
+            spring(),
+            label = "board_popup_buy_scale",
+          )
+
+          Row(
+            modifier =
+              Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = cardH * 0.860f - btnTouchH * 0.5f)
+                .width(btnRowW),
+            horizontalArrangement = Arrangement.spacedBy(btnGap),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Box(
+              modifier =
+                Modifier
+                  .size(width = btnW, height = btnTouchH)
+                  .scale(getScale)
+                  .clickable(
+                    interactionSource = getInteraction,
+                    indication = null,
+                    onClick = onGetFree,
+                  )
+                  .semantics { contentDescription = "Get ${booster.title}" }
+                  .testTag("booster_popup_get"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier = Modifier.size(width = btnW, height = getBtnH),
+                contentAlignment = Alignment.Center,
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.btn_booster_board_get_orange),
+                  contentDescription = null,
+                  contentScale = ContentScale.FillBounds,
+                  modifier = Modifier.fillMaxSize(),
+                )
+                Image(
+                  painter = painterResource(id = R.drawable.txt_booster_get),
+                  contentDescription = "Get",
+                  contentScale = ContentScale.Fit,
+                  modifier =
+                    Modifier
+                      .offset(x = btnW * 0.160f)
+                      .width(btnW * 0.320f)
+                      .aspectRatio(73f / 42f),
+                )
+              }
+            }
+
+            Box(
+              modifier =
+                Modifier
+                  .size(width = btnW, height = btnTouchH)
+                  .scale(buyScale)
+                  .clickable(
+                    interactionSource = buyInteraction,
+                    indication = null,
+                    onClick = onBuy,
+                  )
+                  .semantics { contentDescription = "Buy ${booster.title} for ${booster.costCoins} coins" }
+                  .testTag("buy_booster_confirm"),
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier = Modifier.size(width = btnW, height = buyBtnH),
+                contentAlignment = Alignment.Center,
+              ) {
+                Image(
+                  painter = painterResource(id = R.drawable.btn_booster_board_buy_teal),
+                  contentDescription = null,
+                  contentScale = ContentScale.FillBounds,
+                  modifier = Modifier.fillMaxSize(),
+                )
+                Image(
+                  painter = painterResource(id = R.drawable.txt_booster_200),
+                  contentDescription = "${booster.costCoins}",
+                  contentScale = ContentScale.Fit,
+                  modifier =
+                    Modifier
+                      .offset(x = btnW * 0.165f)
+                      .width(btnW * 0.385f)
+                      .aspectRatio(86f / 41f),
+                )
+              }
+            }
+          }
+        }
+      } else {
+        val drawableRes =
+          when (booster) {
+            BoosterType.REFRESH -> R.drawable.popup_booster_refresh
+            BoosterType.VIP_SLOT -> R.drawable.popup_booster_vip
+            else -> R.drawable.popup_booster_board
+          }
+        val aspectRatio =
+          when (booster) {
+            BoosterType.REFRESH -> 890f / 1122f
+            BoosterType.VIP_SLOT -> 890f / 1143f
+            else -> 894f / 1124f
+          }
+        val closeCenterY = if (booster == BoosterType.VIP_SLOT) 0.161f else 0.148f
+        val buttonsTopY = if (booster == BoosterType.VIP_SLOT) 0.775f else 0.790f
+
+        BoxWithConstraints(
+          modifier =
+            Modifier
+              .fillMaxWidth()
+              .aspectRatio(aspectRatio)
+              .testTag("booster_popup_card"),
+        ) {
+          val cardW = maxWidth
+          val cardH = maxHeight
+
+          Image(
+            painter = painterResource(id = drawableRes),
+            contentDescription = booster.title,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
+          )
+
+          // Top-right red 'X' close button
+          val closeSize = maxOf(48.dp, cardW * 0.145f)
+          Box(
+            modifier =
+              Modifier
+                .offset(
+                  x = cardW * 0.932f - closeSize / 2f,
+                  y = cardH * closeCenterY - closeSize / 2f,
+                )
+                .size(closeSize)
+                .clip(CircleShape)
+                .clickable(onClick = onDismiss)
+                .semantics { contentDescription = "Close ${booster.title} popup" }
+                .testTag("booster_popup_close"),
+          )
+
+          // Bottom-left 'Get' free booster button
+          Box(
+            modifier =
+              Modifier
+                .offset(x = cardW * 0.105f, y = cardH * buttonsTopY)
+                .size(width = cardW * 0.375f, height = maxOf(48.dp, cardH * 0.155f))
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onGetFree)
+                .semantics { contentDescription = "Get ${booster.title}" }
+                .testTag("booster_popup_get"),
+          )
+
+          // Bottom-right '200' coin purchase button
+          Box(
+            modifier =
+              Modifier
+                .offset(x = cardW * 0.505f, y = cardH * buttonsTopY)
+                .size(width = cardW * 0.385f, height = maxOf(48.dp, cardH * 0.155f))
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onBuy)
+                .semantics { contentDescription = "Buy ${booster.title} for ${booster.costCoins} coins" }
+                .testTag("buy_booster_confirm"),
           )
         }
       }
@@ -5139,10 +6257,12 @@ fun SettingsDialog(
   vibrationEnabled: Boolean,
   cloudSaveEnabled: Boolean,
   languageLabel: String,
+  passengerSizeScale: Float = 1.0f,
   onToggleSound: (Boolean) -> Unit,
   onToggleVibration: (Boolean) -> Unit,
   onToggleCloudSave: (Boolean) -> Unit,
   onCycleLanguage: () -> Unit,
+  onChangePassengerSize: (Float) -> Unit = {},
   onOpenSupport: () -> Unit,
   onResetToLevel1: () -> Unit,
   onDismiss: () -> Unit,
@@ -5153,10 +6273,12 @@ fun SettingsDialog(
     vibrationEnabled = vibrationEnabled,
     cloudSaveEnabled = cloudSaveEnabled,
     languageLabel = languageLabel,
+    passengerSizeScale = passengerSizeScale,
     onToggleSound = onToggleSound,
     onToggleVibration = onToggleVibration,
     onToggleCloudSave = onToggleCloudSave,
     onCycleLanguage = onCycleLanguage,
+    onChangePassengerSize = onChangePassengerSize,
     onOpenSupport = onOpenSupport,
     onDismiss = onDismiss,
     onRestart = onResetToLevel1,

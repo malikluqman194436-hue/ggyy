@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Bus Jam</string>
     <string name="no_ads_remove_permanently">Remove ads permanently</string>
@@ -8,6 +9,8 @@
     <string name="win_perfect_title">Perfect!</string>
     <string name="win_next_button">NEXT</string>
     <string name="win_get_bonus_button">Get x20 400</string>
+    <string name="board_unlocked_card_desc">Board booster unlocked</string>
+    <string name="board_unlocked_ok_button">OK</string>
     <string name="shop_top_banner_desc">Shop banner</string>
     <string name="shop_close_desc">Close Shop</string>
     <string name="shop_starter_pack_title">Starter Pack</string>

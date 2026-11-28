@@ -56,6 +56,7 @@ class SoundEffectsEngine(context: Context) {
   private val busCollisionId = loadRaw(context, R.raw.sfx_bus_collision)
   private val levelWinId = loadRaw(context, R.raw.sfx_level_win)
   private val unlockId = busFullId
+  private val lockOpenId = loadRaw(context, R.raw.sfx_lock_open)
   private val levelLoseId = loadRaw(context, R.raw.sfx_level_lose)
 
   private fun loadRaw(context: Context, resId: Int): Int {
@@ -94,8 +95,8 @@ class SoundEffectsEngine(context: Context) {
   }
 
   fun playBonk() {
-    playSample(busCollisionId, volume = 0.95f)
-    vibrate(45L)
+    playSample(busCollisionId, volume = 1.0f)
+    vibrate(55L)
   }
 
   fun playWhoosh() {
@@ -114,6 +115,11 @@ class SoundEffectsEngine(context: Context) {
   fun playUnlock() {
     playSample(unlockId, volume = 0.96f)
     vibrate(40L)
+  }
+
+  fun playLockOpen() {
+    playSample(lockOpenId, volume = 0.72f)
+    vibrate(28L)
   }
 
   fun playWin() {
